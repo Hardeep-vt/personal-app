@@ -65,20 +65,32 @@ async function ensureSheets(spreadsheetId) {
   const existing = meta.sheets.map(s => s.properties.title)
   const needed = ['people', 'interactions']
   const toCreate = needed.filter(n => !existing.includes(n))
-  if (toCreate.length === 0) return
+  if (toCreate.length > 0) {
+    await req(`${BASE}/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        requests: toCreate.map(title => ({ addSheet: { properties: { title } } })),
+      }),
+    })
+    await writePeopleHeaders(spreadsheetId)
+  }
+  await ensureFoodMacroHeaders(spreadsheetId)
+}
 
-  await req(`${BASE}/${spreadsheetId}:batchUpdate`, {
-    method: 'POST',
-    body: JSON.stringify({
-      requests: toCreate.map(title => ({ addSheet: { properties: { title } } })),
-    }),
+async function ensureFoodMacroHeaders(spreadsheetId) {
+  const data = await req(`${BASE}/${spreadsheetId}/values/food_log!1:1`)
+  const headers = data.values?.[0] || []
+  if (headers.includes('protein')) return
+  const newHeaders = ['id', 'date', 'meal_type', 'food_name', 'quantity', 'unit', 'calories', 'protein', 'fat', 'carbs']
+  await req(`${BASE}/${spreadsheetId}/values/food_log!A1:J1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [newHeaders] }),
   })
-  await writePeopleHeaders(spreadsheetId)
 }
 
 async function writeHeaders(spreadsheetId) {
   const headers = [
-    { range: 'food_log!A1', values: [['id', 'date', 'meal_type', 'food_name', 'quantity', 'unit', 'calories']] },
+    { range: 'food_log!A1', values: [['id', 'date', 'meal_type', 'food_name', 'quantity', 'unit', 'calories', 'protein', 'fat', 'carbs']] },
     { range: 'exercise_log!A1', values: [['id', 'date', 'exercise_type', 'duration_min', 'sets', 'reps', 'weight_kg', 'notes']] },
     { range: 'notes!A1', values: [['id', 'title', 'body', 'tags', 'created_at', 'updated_at']] },
     { range: 'todos!A1', values: [['id', 'title', 'description', 'horizon', 'context', 'priority', 'due_date', 'status', 'created_at']] },
