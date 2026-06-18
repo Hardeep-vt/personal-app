@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, deleteRow } from '../../services/sheets'
+import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import indianFoods from '../../data/indianFoods'
 
@@ -151,6 +151,7 @@ export default function FoodTab() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
   const [saving, setSaving] = useState(false)
   const [selectedDate, setSelectedDate] = useState(today())
@@ -184,17 +185,48 @@ export default function FoodTab() {
     e.preventDefault()
     setSaving(true)
     try {
-      const row = [uid(), selectedDate, form.meal_type, form.food_name, form.quantity, form.unit, form.calories, form.protein || '0', form.fat || '0', form.carbs || '0', form.health || '']
-      await appendRow(spreadsheetId, SHEETS.FOOD, row)
+      if (editingId) {
+        const allRows = await getRows(spreadsheetId, SHEETS.FOOD)
+        const idx = allRows.findIndex(r => r.id === editingId)
+        if (idx !== -1) {
+          const row = [editingId, selectedDate, form.meal_type, form.food_name, form.quantity, form.unit, form.calories, form.protein || '0', form.fat || '0', form.carbs || '0', form.health || '']
+          await updateRow(spreadsheetId, SHEETS.FOOD, idx, row)
+        }
+      } else {
+        const row = [uid(), selectedDate, form.meal_type, form.food_name, form.quantity, form.unit, form.calories, form.protein || '0', form.fat || '0', form.carbs || '0', form.health || '']
+        await appendRow(spreadsheetId, SHEETS.FOOD, row)
+      }
       await load()
-      baseRef.current = null
-      setForm({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
-      setShowForm(false)
+      closeForm()
     } catch (e) {
       console.error(e)
       alert('Failed to save. Please try again.')
     }
     setSaving(false)
+  }
+
+  function closeForm() {
+    baseRef.current = null
+    setEditingId(null)
+    setForm({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
+    setShowForm(false)
+  }
+
+  function handleEdit(r) {
+    setEditingId(r.id)
+    setForm({
+      meal_type: r.meal_type,
+      food_name: r.food_name,
+      quantity: r.quantity,
+      unit: r.unit,
+      calories: r.calories,
+      protein: r.protein || '0',
+      fat: r.fat || '0',
+      carbs: r.carbs || '0',
+      health: r.health || '',
+    })
+    baseRef.current = null
+    setShowForm(true)
   }
 
   const baseRef = useRef(null)
@@ -288,7 +320,7 @@ export default function FoodTab() {
                     const health = r.health || lookupHealth(r.food_name)
                     const hc = HEALTH_COLORS[health] || {}
                     return (
-                    <div key={r.id} className={`bg-gray-800 rounded-lg px-3 py-2 ${health ? 'border-l-2 ' + hc.bg : ''}`}>
+                    <div key={r.id} onClick={() => handleEdit(r)} className={`bg-gray-800 rounded-lg px-3 py-2 active:bg-gray-700 cursor-pointer ${health ? 'border-l-2 ' + hc.bg : ''}`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           {health && <div className={`w-2 h-2 rounded-full shrink-0 ${hc.dot}`} />}
@@ -297,7 +329,7 @@ export default function FoodTab() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-indigo-400 text-sm font-medium">{r.calories} kcal</span>
-                          <button onClick={() => handleDelete(r.id)} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleDelete(r.id) }} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
                         </div>
                       </div>
                       {(r.protein || r.fat || r.carbs) && (
@@ -318,13 +350,13 @@ export default function FoodTab() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/70 flex items-end z-50" onClick={() => setShowForm(false)}>
+        <div className="fixed inset-0 bg-black/70 flex items-end z-50" onClick={closeForm}>
           <form
             onSubmit={handleAdd}
             onClick={e => e.stopPropagation()}
             className="bg-gray-900 w-full rounded-t-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto"
           >
-            <h2 className="text-white font-semibold text-base mb-1">Log Food</h2>
+            <h2 className="text-white font-semibold text-base mb-1">{editingId ? 'Edit Food' : 'Log Food'}</h2>
             <div className="grid grid-cols-2 gap-2">
               {MEAL_TYPES.map(m => (
                 <button
@@ -407,14 +439,14 @@ export default function FoodTab() {
               type="submit" disabled={saving || !form.food_name}
               className="w-full bg-indigo-600 text-white font-medium py-3 rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Add Entry'}
+              {saving ? 'Saving…' : editingId ? 'Update Entry' : 'Add Entry'}
             </button>
           </form>
         </div>
       )}
 
       <button
-        onClick={() => setShowForm(true)}
+        onClick={() => { setEditingId(null); setForm({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' }); setShowForm(true) }}
         className="fixed bottom-20 right-4 w-12 h-12 bg-indigo-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform z-40"
       >
         +
