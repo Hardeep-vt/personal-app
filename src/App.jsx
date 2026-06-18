@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import FoodTab from './components/food/FoodTab'
 import ExerciseTab from './components/exercise/ExerciseTab'
 import NotesTab from './components/notes/NotesTab'
 import TodosTab from './components/todos/TodosTab'
 import PeopleTab from './components/people/PeopleTab'
+import usePullToRefresh from './hooks/usePullToRefresh'
 
 const TABS = [
   { id: 'food', label: 'Food', icon: '🥗' },
@@ -17,6 +18,16 @@ const TABS = [
 function AppInner() {
   const { status, signIn, signOut, error } = useAuth()
   const [activeTab, setActiveTab] = useState('food')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true)
+    setRefreshKey(k => k + 1)
+    setTimeout(() => setRefreshing(false), 600)
+  }, [])
+
+  usePullToRefresh(handleRefresh)
 
   if (status === 'loading') {
     return (
@@ -51,21 +62,35 @@ function AppInner() {
   }
 
   const tabContent = {
-    food: <FoodTab />,
-    exercise: <ExerciseTab />,
-    notes: <NotesTab />,
-    todos: <TodosTab />,
-    people: <PeopleTab />,
+    food: <FoodTab key={refreshKey} />,
+    exercise: <ExerciseTab key={refreshKey} />,
+    notes: <NotesTab key={refreshKey} />,
+    todos: <TodosTab key={refreshKey} />,
+    people: <PeopleTab key={refreshKey} />,
   }
 
   return (
     <div className="flex flex-col min-h-svh">
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
         <span className="text-white font-semibold text-lg">MyApp</span>
-        <button onClick={signOut} className="text-gray-500 text-xs active:text-gray-300">
-          Sign out
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleRefresh}
+            className={`text-gray-400 active:text-white text-lg transition-transform ${refreshing ? 'animate-spin' : ''}`}
+          >
+            ↻
+          </button>
+          <button onClick={signOut} className="text-gray-500 text-xs active:text-gray-300">
+            Sign out
+          </button>
+        </div>
       </header>
+
+      {refreshing && (
+        <div className="flex justify-center py-1">
+          <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto pb-20">
         {tabContent[activeTab]}
