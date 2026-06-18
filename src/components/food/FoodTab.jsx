@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { getRows, appendRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
+import indianFoods from '../../data/indianFoods'
 
 const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
 
@@ -11,6 +12,98 @@ function today() {
 
 function uid() {
   return Date.now().toString(36)
+}
+
+function FoodSearch({ onSelect }) {
+  const [query, setQuery] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [apiResults, setApiResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const debounceRef = useRef(null)
+
+  function handleChange(val) {
+    setQuery(val)
+    if (!val.trim()) {
+      setSuggestions([])
+      setApiResults([])
+      return
+    }
+
+    const q = val.toLowerCase()
+    const local = indianFoods
+      .filter(f => f.name.toLowerCase().includes(q))
+      .slice(0, 8)
+    setSuggestions(local)
+
+    clearTimeout(debounceRef.current)
+    if (local.length < 3 && val.length >= 3) {
+      debounceRef.current = setTimeout(() => searchAPI(val), 500)
+    }
+  }
+
+  async function searchAPI(q) {
+    setSearching(true)
+    try {
+      const res = await fetch(`https://api.calorieninjas.com/v1/nutrition?query=${encodeURIComponent(q)}`, {
+        headers: { 'X-Api-Key': 'free' },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const mapped = (data.items || []).map(item => ({
+          name: item.name.charAt(0).toUpperCase() + item.name.slice(1),
+          calories: Math.round(item.calories),
+          unit: 'serving',
+          quantity: 1,
+          fromAPI: true,
+        }))
+        setApiResults(mapped.slice(0, 5))
+      }
+    } catch (e) {
+      console.error(e)
+    }
+    setSearching(false)
+  }
+
+  const allResults = [...suggestions, ...apiResults.filter(a => !suggestions.some(s => s.name.toLowerCase() === a.name.toLowerCase()))]
+
+  return (
+    <div>
+      <input
+        placeholder="Search food (e.g. roti, dal, biryani)…"
+        value={query}
+        onChange={e => handleChange(e.target.value)}
+        className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500"
+        autoFocus
+      />
+      {query.trim() && (
+        <div className="mt-1 max-h-48 overflow-y-auto rounded-lg bg-gray-800 border border-gray-700">
+          {allResults.length === 0 && !searching && (
+            <div className="px-3 py-2 text-gray-500 text-xs">No matches. Type the name and enter calories manually.</div>
+          )}
+          {allResults.map((item, i) => (
+            <button
+              key={item.name + i}
+              type="button"
+              onClick={() => { onSelect(item); setQuery(''); setSuggestions([]); setApiResults([]) }}
+              className="w-full text-left px-3 py-2 hover:bg-gray-700 active:bg-gray-700 border-b border-gray-700 last:border-0 flex items-center justify-between"
+            >
+              <div>
+                <span className="text-white text-sm">{item.name}</span>
+                <span className="text-gray-500 text-xs ml-2">per {item.unit}</span>
+              </div>
+              <span className="text-indigo-400 text-sm font-medium">{item.calories} kcal</span>
+            </button>
+          ))}
+          {searching && (
+            <div className="px-3 py-2 text-gray-500 text-xs flex items-center gap-2">
+              <div className="w-3 h-3 border border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              Searching online…
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function FoodTab() {
@@ -62,6 +155,16 @@ export default function FoodTab() {
     setSaving(false)
   }
 
+  function handleFoodSelect(item) {
+    setForm(f => ({
+      ...f,
+      food_name: item.name,
+      quantity: String(item.quantity || 1),
+      unit: item.unit,
+      calories: String(item.calories),
+    }))
+  }
+
   const todayRows = rows.filter(r => r.date === selectedDate)
   const totalCalories = todayRows.reduce((sum, r) => sum + (parseFloat(r.calories) || 0), 0)
 
@@ -72,7 +175,6 @@ export default function FoodTab() {
 
   return (
     <div className="px-4 py-4">
-      {/* Date picker + summary */}
       <div className="flex items-center justify-between mb-4">
         <input
           type="date"
@@ -123,7 +225,6 @@ export default function FoodTab() {
         </>
       )}
 
-      {/* Add form */}
       {showForm && (
         <div className="fixed inset-0 bg-black/70 flex items-end z-50" onClick={() => setShowForm(false)}>
           <form
@@ -145,11 +246,16 @@ export default function FoodTab() {
                 </button>
               ))}
             </div>
-            <input
-              required placeholder="Food name"
-              value={form.food_name} onChange={e => setForm(f => ({ ...f, food_name: e.target.value }))}
-              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500"
-            />
+
+            <FoodSearch onSelect={handleFoodSelect} />
+
+            {form.food_name && (
+              <div className="bg-gray-800 rounded-lg px-3 py-2 flex items-center justify-between">
+                <span className="text-white text-sm">{form.food_name}</span>
+                <button type="button" onClick={() => setForm(f => ({ ...f, food_name: '', calories: '', quantity: '', unit: 'g' }))} className="text-gray-500 text-xs">✕ Clear</button>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <input
                 placeholder="Qty" type="number"
@@ -160,7 +266,7 @@ export default function FoodTab() {
                 value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
                 className="w-1/3 bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700"
               >
-                {['g', 'ml', 'oz', 'cup', 'tbsp', 'piece'].map(u => <option key={u}>{u}</option>)}
+                {['g', 'ml', 'oz', 'cup', 'tbsp', 'piece', 'plate', 'glass', 'serving', '6 pieces', '10 pieces', 'slice', 'medium', 'packet', 'scoop+milk', 'leg+thigh', '100g', '7 halves', 'handful', '4 pieces', 'tsp'].map(u => <option key={u}>{u}</option>)}
               </select>
               <input
                 required placeholder="kcal" type="number"
@@ -169,7 +275,7 @@ export default function FoodTab() {
               />
             </div>
             <button
-              type="submit" disabled={saving}
+              type="submit" disabled={saving || !form.food_name}
               className="w-full bg-indigo-600 text-white font-medium py-3 rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Add Entry'}
