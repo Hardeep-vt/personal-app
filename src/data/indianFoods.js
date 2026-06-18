@@ -22,6 +22,13 @@ export default [
   { name: 'Makki di Roti', calories: 130, protein: 3, fat: 2, carbs: 26, unit: 'piece', quantity: 1, health: 'green' },
   { name: 'Rumali Roti', calories: 90, protein: 3, fat: 1, carbs: 18, unit: 'piece', quantity: 1, health: 'green' },
   { name: 'Thepla', calories: 150, protein: 4, fat: 5, carbs: 22, unit: 'piece', quantity: 1, health: 'green' },
+  { name: 'Bread (white)', calories: 75, protein: 2, fat: 1, carbs: 14, unit: 'slice', quantity: 1, health: 'orange' },
+  { name: 'Bread (brown/whole wheat)', calories: 70, protein: 3, fat: 1, carbs: 12, unit: 'slice', quantity: 1, health: 'green' },
+  { name: 'Sourdough Bread', calories: 80, protein: 3, fat: 1, carbs: 15, unit: 'slice', quantity: 1, health: 'green' },
+  { name: 'Biscuit (digestive)', calories: 70, protein: 1, fat: 3, carbs: 10, unit: 'piece', quantity: 1, health: 'orange' },
+  { name: 'Biscuit (cream)', calories: 90, protein: 1, fat: 4, carbs: 12, unit: 'piece', quantity: 1, health: 'red' },
+  { name: 'Cookie (chocolate chip)', calories: 80, protein: 1, fat: 4, carbs: 10, unit: 'piece', quantity: 1, health: 'red' },
+  { name: 'Cookie (oatmeal)', calories: 70, protein: 1, fat: 3, carbs: 10, unit: 'piece', quantity: 1, health: 'orange' },
 
   // ── Rice ──
   { name: 'Steamed Rice (white)', calories: 200, protein: 4, fat: 0, carbs: 45, unit: 'cup', quantity: 1, health: 'orange' },
