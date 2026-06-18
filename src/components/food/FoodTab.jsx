@@ -187,26 +187,50 @@ export default function FoodTab() {
       const row = [uid(), selectedDate, form.meal_type, form.food_name, form.quantity, form.unit, form.calories, form.protein || '0', form.fat || '0', form.carbs || '0', form.health || '']
       await appendRow(spreadsheetId, SHEETS.FOOD, row)
       await load()
+      baseRef.current = null
       setForm({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
       setShowForm(false)
     } catch (e) {
       console.error(e)
+      alert('Failed to save. Please try again.')
     }
     setSaving(false)
   }
 
+  const baseRef = useRef(null)
+
   function handleFoodSelect(item) {
+    const base = { calories: item.calories, protein: item.protein || 0, fat: item.fat || 0, carbs: item.carbs || 0, quantity: item.quantity || 1 }
+    baseRef.current = base
     setForm(f => ({
       ...f,
       food_name: item.name,
-      quantity: String(item.quantity || 1),
+      quantity: String(base.quantity),
       unit: item.unit,
-      calories: String(item.calories),
-      protein: String(item.protein || 0),
-      fat: String(item.fat || 0),
-      carbs: String(item.carbs || 0),
+      calories: String(base.calories),
+      protein: String(base.protein),
+      fat: String(base.fat),
+      carbs: String(base.carbs),
       health: item.health || '',
     }))
+  }
+
+  function handleQuantityChange(val) {
+    const qty = parseFloat(val)
+    if (baseRef.current && !isNaN(qty)) {
+      const b = baseRef.current
+      const ratio = qty / b.quantity
+      setForm(f => ({
+        ...f,
+        quantity: val,
+        calories: String(Math.round(b.calories * ratio)),
+        protein: String(Math.round(b.protein * ratio)),
+        fat: String(Math.round(b.fat * ratio)),
+        carbs: String(Math.round(b.carbs * ratio)),
+      }))
+    } else {
+      setForm(f => ({ ...f, quantity: val }))
+    }
   }
 
   const todayRows = rows.filter(r => r.date === selectedDate)
@@ -321,7 +345,7 @@ export default function FoodTab() {
               <div className="bg-gray-800 rounded-lg px-3 py-2">
                 <div className="flex items-center justify-between">
                   <span className="text-white text-sm">{form.food_name}</span>
-                  <button type="button" onClick={() => setForm(f => ({ ...f, food_name: '', calories: '', quantity: '', unit: 'g', protein: '', fat: '', carbs: '', health: '' }))} className="text-gray-500 text-xs">✕ Clear</button>
+                  <button type="button" onClick={() => { baseRef.current = null; setForm(f => ({ ...f, food_name: '', calories: '', quantity: '', unit: 'g', protein: '', fat: '', carbs: '', health: '' })) }} className="text-gray-500 text-xs">✕ Clear</button>
                 </div>
                 {(form.protein || form.fat || form.carbs) && (
                   <div className="flex gap-3 mt-0.5 text-xs">
@@ -335,15 +359,15 @@ export default function FoodTab() {
 
             <div className="flex gap-2">
               <input
-                placeholder="Qty" type="number"
-                value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
+                placeholder="Qty" type="number" step="any"
+                value={form.quantity} onChange={e => handleQuantityChange(e.target.value)}
                 className="w-1/3 bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500"
               />
               <select
                 value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
                 className="w-1/3 bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700"
               >
-                {['g', 'ml', 'oz', 'cup', 'tbsp', 'piece', 'plate', 'glass', 'serving', '6 pieces', '10 pieces', 'slice', 'medium', 'packet', 'scoop+milk', 'leg+thigh', '100g', '7 halves', 'handful', '4 pieces', 'tsp'].map(u => <option key={u}>{u}</option>)}
+                {['g', 'ml', 'oz', 'cup', 'tbsp', 'piece', 'plate', 'glass', 'serving', 'slice', 'medium', 'can', 'bottle', 'pint', 'scoop', 'ear', '6 inch', '30ml peg', '30ml shot', '6 pieces', '10 pieces', '4 pieces', '7 halves', 'handful', 'packet', 'scoop+milk', 'leg+thigh', '100g', 'tsp'].map(u => <option key={u}>{u}</option>)}
               </select>
               <input
                 required placeholder="kcal" type="number"
@@ -391,7 +415,7 @@ export default function FoodTab() {
 
       <button
         onClick={() => setShowForm(true)}
-        className="fixed bottom-20 right-4 w-12 h-12 bg-indigo-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+        className="fixed bottom-20 right-4 w-12 h-12 bg-indigo-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform z-40"
       >
         +
       </button>
