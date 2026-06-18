@@ -142,9 +142,9 @@ export default function NutritionDashboard({ rows }) {
       <div className="bg-gray-800 rounded-xl p-3">
         <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">Daily Calories</h3>
         <div className="flex gap-3 mb-3 flex-wrap">
-          <span className="text-[9px] text-blue-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" />Protein</span>
-          <span className="text-[9px] text-amber-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" />Fat</span>
-          <span className="text-[9px] text-green-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500 inline-block" />Carbs</span>
+          <span className="text-[9px] text-green-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500 inline-block" />Protein</span>
+          <span className="text-[9px] text-blue-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" />Fat</span>
+          <span className="text-[9px] text-amber-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" />Carbs</span>
           <span className="text-[9px] text-gray-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-gray-500 inline-block" />Other</span>
         </div>
         <div className="flex items-end gap-0.5" style={{ height: 120 }}>
@@ -165,9 +165,9 @@ export default function NutritionDashboard({ rows }) {
                       <div className="w-full h-full bg-gray-700" />
                     ) : (
                       <>
-                        <div className="w-full bg-blue-500" style={{ height: `${(pCal / sum) * 100}%` }} />
-                        <div className="w-full bg-amber-500" style={{ height: `${(fCal / sum) * 100}%` }} />
-                        <div className="w-full bg-green-500" style={{ height: `${(cCal / sum) * 100}%` }} />
+                        <div className="w-full bg-green-500" style={{ height: `${(pCal / sum) * 100}%` }} />
+                        <div className="w-full bg-blue-500" style={{ height: `${(fCal / sum) * 100}%` }} />
+                        <div className="w-full bg-amber-500" style={{ height: `${(cCal / sum) * 100}%` }} />
                         {oCal > 0 && <div className="w-full bg-gray-500" style={{ height: `${(oCal / sum) * 100}%` }} />}
                       </>
                     )}
