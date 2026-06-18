@@ -151,7 +151,7 @@ export default [
   { name: 'Chowmein', calories: 300, protein: 8, fat: 10, carbs: 42, unit: 'plate', quantity: 1, health: 'orange' },
   { name: 'Maggi Noodles', calories: 310, protein: 7, fat: 12, carbs: 42, unit: 'packet', quantity: 1, health: 'red' },
 
-  // ── Dairy & Drinks ──
+  // ── Dairy, Drinks & Beverages ──
   { name: 'Chai (with milk + sugar)', calories: 80, protein: 2, fat: 2, carbs: 12, unit: 'cup', quantity: 1, health: 'orange' },
   { name: 'Chai (without sugar)', calories: 40, protein: 2, fat: 2, carbs: 3, unit: 'cup', quantity: 1, health: 'green' },
   { name: 'Coffee (with milk + sugar)', calories: 90, protein: 2, fat: 3, carbs: 12, unit: 'cup', quantity: 1, health: 'orange' },
@@ -162,11 +162,13 @@ export default [
   { name: 'Milk (whole)', calories: 150, protein: 8, fat: 8, carbs: 12, unit: 'glass', quantity: 1, health: 'green' },
   { name: 'Milk (toned)', calories: 100, protein: 6, fat: 3, carbs: 10, unit: 'glass', quantity: 1, health: 'green' },
   { name: 'Curd / Yogurt (plain)', calories: 100, protein: 5, fat: 4, carbs: 8, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Greek Yogurt', calories: 130, protein: 12, fat: 5, carbs: 8, unit: 'cup', quantity: 1, health: 'green' },
   { name: 'Raita (boondi)', calories: 120, protein: 4, fat: 5, carbs: 12, unit: 'cup', quantity: 1, health: 'orange' },
   { name: 'Raita (onion/cucumber)', calories: 80, protein: 4, fat: 3, carbs: 8, unit: 'cup', quantity: 1, health: 'green' },
   { name: 'Paneer (raw)', calories: 265, protein: 18, fat: 20, carbs: 4, unit: '100g', quantity: 100, health: 'orange' },
   { name: 'Ghee', calories: 45, protein: 0, fat: 5, carbs: 0, unit: 'tsp', quantity: 1, health: 'orange' },
   { name: 'Butter', calories: 35, protein: 0, fat: 4, carbs: 0, unit: 'tsp', quantity: 1, health: 'orange' },
+  { name: 'Hot Chocolate', calories: 190, protein: 3, fat: 6, carbs: 30, unit: 'cup', quantity: 1, health: 'orange' },
 
   // ── Sweets & Desserts ──
   { name: 'Gulab Jamun', calories: 175, protein: 3, fat: 8, carbs: 24, unit: 'piece', quantity: 1, health: 'red' },
@@ -183,6 +185,9 @@ export default [
   { name: 'Peda', calories: 100, protein: 3, fat: 5, carbs: 12, unit: 'piece', quantity: 1, health: 'red' },
   { name: 'Rasmalai', calories: 180, protein: 5, fat: 8, carbs: 22, unit: 'piece', quantity: 1, health: 'red' },
   { name: 'Kulfi', calories: 200, protein: 5, fat: 10, carbs: 22, unit: 'piece', quantity: 1, health: 'red' },
+  { name: 'Cheesecake', calories: 320, protein: 5, fat: 20, carbs: 30, unit: 'slice', quantity: 1, health: 'red' },
+  { name: 'Ice Cream', calories: 270, protein: 5, fat: 14, carbs: 32, unit: 'cup', quantity: 1, health: 'red' },
+  { name: 'Rusk', calories: 55, protein: 1, fat: 1, carbs: 10, unit: 'piece', quantity: 1, health: 'orange' },
 
   // ── Fruits ──
   { name: 'Apple', calories: 95, protein: 0, fat: 0, carbs: 25, unit: 'piece', quantity: 1, health: 'green' },
@@ -204,6 +209,32 @@ export default [
   { name: 'Peanuts', calories: 170, protein: 7, fat: 14, carbs: 5, unit: 'handful', quantity: 1, health: 'green' },
   { name: 'Dates (Khajoor)', calories: 65, protein: 1, fat: 0, carbs: 18, unit: 'piece', quantity: 1, health: 'orange' },
   { name: 'Raisins (Kishmish)', calories: 85, protein: 1, fat: 0, carbs: 22, unit: 'tbsp', quantity: 1, health: 'orange' },
+  { name: 'Pumpkin Seeds', calories: 160, protein: 9, fat: 14, carbs: 3, unit: 'handful', quantity: 1, health: 'green' },
+  { name: 'Chia Seeds', calories: 70, protein: 2, fat: 4, carbs: 6, unit: 'tbsp', quantity: 1, health: 'green' },
+  { name: 'Sabja (Basil Seeds)', calories: 20, protein: 1, fat: 1, carbs: 3, unit: 'tbsp', quantity: 1, health: 'green' },
+  { name: 'Sunflower Seeds', calories: 165, protein: 6, fat: 14, carbs: 6, unit: 'handful', quantity: 1, health: 'green' },
+  { name: 'Flax Seeds', calories: 55, protein: 2, fat: 4, carbs: 3, unit: 'tbsp', quantity: 1, health: 'green' },
+
+  // ── Boiled Vegetables ──
+  { name: 'Boiled Broccoli', calories: 55, protein: 4, fat: 1, carbs: 11, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Boiled Edamame', calories: 190, protein: 17, fat: 8, carbs: 14, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Boiled Carrot', calories: 55, protein: 1, fat: 0, carbs: 13, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Boiled Peas', calories: 135, protein: 9, fat: 0, carbs: 25, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Boiled Chickpeas', calories: 270, protein: 15, fat: 4, carbs: 45, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Boiled Rajma (Kidney Beans)', calories: 225, protein: 15, fat: 1, carbs: 40, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Boiled Radish (Mooli)', calories: 20, protein: 1, fat: 0, carbs: 4, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Boiled Sweet Potato', calories: 180, protein: 4, fat: 0, carbs: 42, unit: 'medium', quantity: 1, health: 'green' },
+  { name: 'Boiled Corn', calories: 135, protein: 5, fat: 2, carbs: 30, unit: 'ear', quantity: 1, health: 'green' },
+  { name: 'Boiled Beetroot', calories: 75, protein: 3, fat: 0, carbs: 17, unit: 'cup', quantity: 1, health: 'green' },
+
+  // ── Raw Vegetables ──
+  { name: 'Raw Tomato', calories: 22, protein: 1, fat: 0, carbs: 5, unit: 'medium', quantity: 1, health: 'green' },
+  { name: 'Raw Cucumber', calories: 15, protein: 1, fat: 0, carbs: 4, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Raw Carrot', calories: 25, protein: 1, fat: 0, carbs: 6, unit: 'medium', quantity: 1, health: 'green' },
+  { name: 'Raw Onion', calories: 45, protein: 1, fat: 0, carbs: 11, unit: 'medium', quantity: 1, health: 'green' },
+  { name: 'Raw Bell Pepper', calories: 30, protein: 1, fat: 0, carbs: 7, unit: 'medium', quantity: 1, health: 'green' },
+  { name: 'Raw Lettuce', calories: 5, protein: 0, fat: 0, carbs: 1, unit: 'cup', quantity: 1, health: 'green' },
+  { name: 'Raw Radish (Mooli)', calories: 10, protein: 0, fat: 0, carbs: 2, unit: 'cup', quantity: 1, health: 'green' },
 
   // ── Common Western / Everyday ──
   { name: 'Sandwich (veg)', calories: 280, protein: 8, fat: 10, carbs: 38, unit: 'piece', quantity: 1, health: 'orange' },
@@ -215,4 +246,18 @@ export default [
   { name: 'Salad (green)', calories: 50, protein: 2, fat: 1, carbs: 8, unit: 'cup', quantity: 1, health: 'green' },
   { name: 'Protein Shake', calories: 200, protein: 25, fat: 4, carbs: 14, unit: 'scoop+milk', quantity: 1, health: 'green' },
   { name: 'Whey Protein (scoop)', calories: 120, protein: 24, fat: 2, carbs: 3, unit: 'scoop', quantity: 1, health: 'green' },
+  { name: 'Avocado Toast', calories: 280, protein: 7, fat: 16, carbs: 28, unit: 'slice', quantity: 1, health: 'green' },
+  { name: 'Chicken Subway (6 inch)', calories: 370, protein: 24, fat: 10, carbs: 46, unit: '6 inch', quantity: 1, health: 'orange' },
+
+  // ── Alcoholic Drinks ──
+  { name: 'Whisky', calories: 70, protein: 0, fat: 0, carbs: 0, unit: '30ml peg', quantity: 1, health: 'red' },
+  { name: 'Vodka', calories: 65, protein: 0, fat: 0, carbs: 0, unit: '30ml shot', quantity: 1, health: 'red' },
+  { name: 'Rum', calories: 65, protein: 0, fat: 0, carbs: 0, unit: '30ml peg', quantity: 1, health: 'red' },
+  { name: 'Beer (bottle 650ml)', calories: 260, protein: 2, fat: 0, carbs: 20, unit: 'bottle', quantity: 1, health: 'red' },
+  { name: 'Beer (can 330ml)', calories: 130, protein: 1, fat: 0, carbs: 10, unit: 'can', quantity: 1, health: 'red' },
+  { name: 'Beer (pint 500ml)', calories: 200, protein: 2, fat: 0, carbs: 15, unit: 'pint', quantity: 1, health: 'red' },
+  { name: 'Smirnoff Ice', calories: 230, protein: 0, fat: 0, carbs: 32, unit: 'bottle', quantity: 1, health: 'red' },
+  { name: 'Hard Seltzer', calories: 100, protein: 0, fat: 0, carbs: 2, unit: 'can', quantity: 1, health: 'red' },
+  { name: 'Wine (red)', calories: 125, protein: 0, fat: 0, carbs: 4, unit: 'glass', quantity: 1, health: 'orange' },
+  { name: 'Wine (white)', calories: 120, protein: 0, fat: 0, carbs: 4, unit: 'glass', quantity: 1, health: 'orange' },
 ]
