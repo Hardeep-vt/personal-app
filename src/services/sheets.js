@@ -80,9 +80,9 @@ async function ensureSheets(spreadsheetId) {
 async function ensureFoodMacroHeaders(spreadsheetId) {
   const data = await req(`${BASE}/${spreadsheetId}/values/food_log!1:1`)
   const headers = data.values?.[0] || []
-  if (headers.includes('protein')) return
-  const newHeaders = ['id', 'date', 'meal_type', 'food_name', 'quantity', 'unit', 'calories', 'protein', 'fat', 'carbs']
-  await req(`${BASE}/${spreadsheetId}/values/food_log!A1:J1?valueInputOption=RAW`, {
+  if (headers.includes('health')) return
+  const newHeaders = ['id', 'date', 'meal_type', 'food_name', 'quantity', 'unit', 'calories', 'protein', 'fat', 'carbs', 'health']
+  await req(`${BASE}/${spreadsheetId}/values/food_log!A1:K1?valueInputOption=RAW`, {
     method: 'PUT',
     body: JSON.stringify({ values: [newHeaders] }),
   })
@@ -90,7 +90,7 @@ async function ensureFoodMacroHeaders(spreadsheetId) {
 
 async function writeHeaders(spreadsheetId) {
   const headers = [
-    { range: 'food_log!A1', values: [['id', 'date', 'meal_type', 'food_name', 'quantity', 'unit', 'calories', 'protein', 'fat', 'carbs']] },
+    { range: 'food_log!A1', values: [['id', 'date', 'meal_type', 'food_name', 'quantity', 'unit', 'calories', 'protein', 'fat', 'carbs', 'health']] },
     { range: 'exercise_log!A1', values: [['id', 'date', 'exercise_type', 'duration_min', 'sets', 'reps', 'weight_kg', 'notes']] },
     { range: 'notes!A1', values: [['id', 'title', 'body', 'tags', 'created_at', 'updated_at']] },
     { range: 'todos!A1', values: [['id', 'title', 'description', 'horizon', 'context', 'priority', 'due_date', 'status', 'created_at']] },

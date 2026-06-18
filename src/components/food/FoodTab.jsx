@@ -14,6 +14,17 @@ function uid() {
   return Date.now().toString(36)
 }
 
+const HEALTH_COLORS = {
+  green: { bg: 'border-l-emerald-500', dot: 'bg-emerald-500', text: 'text-emerald-400' },
+  orange: { bg: 'border-l-amber-500', dot: 'bg-amber-500', text: 'text-amber-400' },
+  red: { bg: 'border-l-red-400', dot: 'bg-red-400', text: 'text-red-400' },
+}
+
+function lookupHealth(foodName) {
+  const match = indianFoods.find(f => f.name.toLowerCase() === foodName?.toLowerCase())
+  return match?.health || null
+}
+
 function MacroBar({ label, value, color, max }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0
   return (
@@ -98,27 +109,31 @@ function FoodSearch({ onSelect }) {
           {allResults.length === 0 && !searching && (
             <div className="px-3 py-2 text-gray-500 text-xs">No matches. Type the name and enter calories manually.</div>
           )}
-          {allResults.map((item, i) => (
-            <button
-              key={item.name + i}
-              type="button"
-              onClick={() => { onSelect(item); setQuery(''); setSuggestions([]); setApiResults([]) }}
-              className="w-full text-left px-3 py-2 hover:bg-gray-700 active:bg-gray-700 border-b border-gray-700 last:border-0"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-white text-sm">{item.name}</span>
-                  <span className="text-gray-500 text-xs ml-2">per {item.unit}</span>
+          {allResults.map((item, i) => {
+            const hc = HEALTH_COLORS[item.health] || {}
+            return (
+              <button
+                key={item.name + i}
+                type="button"
+                onClick={() => { onSelect(item); setQuery(''); setSuggestions([]); setApiResults([]) }}
+                className={`w-full text-left px-3 py-2 hover:bg-gray-700 active:bg-gray-700 border-b border-gray-700 last:border-0 ${item.health ? 'border-l-2 ' + hc.bg : ''}`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {item.health && <div className={`w-2 h-2 rounded-full shrink-0 ${hc.dot}`} />}
+                    <span className="text-white text-sm">{item.name}</span>
+                    <span className="text-gray-500 text-xs">per {item.unit}</span>
+                  </div>
+                  <span className="text-indigo-400 text-sm font-medium">{item.calories} kcal</span>
                 </div>
-                <span className="text-indigo-400 text-sm font-medium">{item.calories} kcal</span>
-              </div>
-              <div className="flex gap-3 mt-0.5 text-xs">
-                <span className="text-blue-400">P {item.protein}g</span>
-                <span className="text-amber-400">F {item.fat}g</span>
-                <span className="text-green-400">C {item.carbs}g</span>
-              </div>
-            </button>
-          ))}
+                <div className="flex gap-3 mt-0.5 text-xs ml-4">
+                  <span className="text-blue-400">P {item.protein}g</span>
+                  <span className="text-amber-400">F {item.fat}g</span>
+                  <span className="text-green-400">C {item.carbs}g</span>
+                </div>
+              </button>
+            )
+          })}
           {searching && (
             <div className="px-3 py-2 text-gray-500 text-xs flex items-center gap-2">
               <div className="w-3 h-3 border border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -136,7 +151,7 @@ export default function FoodTab() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '' })
+  const [form, setForm] = useState({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
   const [saving, setSaving] = useState(false)
   const [selectedDate, setSelectedDate] = useState(today())
 
@@ -169,10 +184,10 @@ export default function FoodTab() {
     e.preventDefault()
     setSaving(true)
     try {
-      const row = [uid(), selectedDate, form.meal_type, form.food_name, form.quantity, form.unit, form.calories, form.protein || '0', form.fat || '0', form.carbs || '0']
+      const row = [uid(), selectedDate, form.meal_type, form.food_name, form.quantity, form.unit, form.calories, form.protein || '0', form.fat || '0', form.carbs || '0', form.health || '']
       await appendRow(spreadsheetId, SHEETS.FOOD, row)
       await load()
-      setForm({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '' })
+      setForm({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
       setShowForm(false)
     } catch (e) {
       console.error(e)
@@ -190,6 +205,7 @@ export default function FoodTab() {
       protein: String(item.protein || 0),
       fat: String(item.fat || 0),
       carbs: String(item.carbs || 0),
+      health: item.health || '',
     }))
   }
 
@@ -244,12 +260,16 @@ export default function FoodTab() {
                 <p className="text-gray-700 text-xs py-2">Nothing logged</p>
               ) : (
                 <div className="space-y-1">
-                  {byMeal[meal].map(r => (
-                    <div key={r.id} className="bg-gray-800 rounded-lg px-3 py-2">
+                  {byMeal[meal].map(r => {
+                    const health = r.health || lookupHealth(r.food_name)
+                    const hc = HEALTH_COLORS[health] || {}
+                    return (
+                    <div key={r.id} className={`bg-gray-800 rounded-lg px-3 py-2 ${health ? 'border-l-2 ' + hc.bg : ''}`}>
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="flex items-center gap-2">
+                          {health && <div className={`w-2 h-2 rounded-full shrink-0 ${hc.dot}`} />}
                           <span className="text-white text-sm">{r.food_name}</span>
-                          <span className="text-gray-500 text-xs ml-2">{r.quantity} {r.unit}</span>
+                          <span className="text-gray-500 text-xs">{r.quantity} {r.unit}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-indigo-400 text-sm font-medium">{r.calories} kcal</span>
@@ -257,14 +277,15 @@ export default function FoodTab() {
                         </div>
                       </div>
                       {(r.protein || r.fat || r.carbs) && (
-                        <div className="flex gap-3 mt-0.5 text-xs">
+                        <div className="flex gap-3 mt-0.5 text-xs ml-4">
                           <span className="text-blue-400">P {r.protein}g</span>
                           <span className="text-amber-400">F {r.fat}g</span>
                           <span className="text-green-400">C {r.carbs}g</span>
                         </div>
                       )}
                     </div>
-                  ))}
+                  )})}
+
                 </div>
               )}
             </div>
@@ -300,7 +321,7 @@ export default function FoodTab() {
               <div className="bg-gray-800 rounded-lg px-3 py-2">
                 <div className="flex items-center justify-between">
                   <span className="text-white text-sm">{form.food_name}</span>
-                  <button type="button" onClick={() => setForm(f => ({ ...f, food_name: '', calories: '', quantity: '', unit: 'g', protein: '', fat: '', carbs: '' }))} className="text-gray-500 text-xs">✕ Clear</button>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, food_name: '', calories: '', quantity: '', unit: 'g', protein: '', fat: '', carbs: '', health: '' }))} className="text-gray-500 text-xs">✕ Clear</button>
                 </div>
                 {(form.protein || form.fat || form.carbs) && (
                   <div className="flex gap-3 mt-0.5 text-xs">
