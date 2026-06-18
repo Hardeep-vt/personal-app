@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import indianFoods from '../../data/indianFoods'
+import NutritionDashboard from './NutritionDashboard'
 
 const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
 
@@ -155,6 +156,7 @@ export default function FoodTab() {
   const [form, setForm] = useState({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
   const [saving, setSaving] = useState(false)
   const [selectedDate, setSelectedDate] = useState(today())
+  const [view, setView] = useState('log')
 
   useEffect(() => {
     load()
@@ -278,6 +280,36 @@ export default function FoodTab() {
 
   return (
     <div className="px-4 py-4">
+      {/* View toggle */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => setView('log')}
+          className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+            view === 'log' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'
+          }`}
+        >
+          Daily Log
+        </button>
+        <button
+          onClick={() => setView('dashboard')}
+          className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+            view === 'dashboard' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'
+          }`}
+        >
+          Dashboard
+        </button>
+      </div>
+
+      {view === 'dashboard' ? (
+        loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <NutritionDashboard rows={rows} />
+        )
+      ) : (
+      <>
       <div className="flex items-center justify-between mb-3">
         <input
           type="date"
@@ -347,6 +379,8 @@ export default function FoodTab() {
             </div>
           ))}
         </>
+      )}
+      </>
       )}
 
       {showForm && (
