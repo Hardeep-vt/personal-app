@@ -138,21 +138,40 @@ export default function NutritionDashboard({ rows }) {
         </div>
       </div>
 
-      {/* Calorie bar chart */}
+      {/* Calorie bar chart - stacked by macro source */}
       <div className="bg-gray-800 rounded-xl p-3">
-        <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Daily Calories</h3>
+        <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">Daily Calories</h3>
+        <div className="flex gap-3 mb-3 flex-wrap">
+          <span className="text-[9px] text-blue-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" />Protein</span>
+          <span className="text-[9px] text-amber-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" />Fat</span>
+          <span className="text-[9px] text-green-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500 inline-block" />Carbs</span>
+          <span className="text-[9px] text-gray-400 flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-gray-500 inline-block" />Other</span>
+        </div>
         <div className="flex items-end gap-0.5" style={{ height: 120 }}>
           {days.map(d => {
-            const pct = maxCal > 0 ? (d.cal / maxCal) * 100 : 0
-            const barColor = d.cal === 0 ? 'bg-gray-700' : d.cal > avgCal * 1.3 ? 'bg-red-400' : d.cal < avgCal * 0.7 ? 'bg-amber-400' : 'bg-indigo-500'
+            const pCal = d.p * 4
+            const fCal = d.f * 9
+            const cCal = d.c * 4
+            const oCal = Math.max(0, d.cal - pCal - fCal - cCal)
+            const totalPct = maxCal > 0 ? (d.cal / maxCal) * 100 : 0
+            const barH = Math.max(totalPct, d.cal > 0 ? 4 : 1)
+            const sum = pCal + fCal + cCal + oCal || 1
             return (
               <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5">
                 <span className="text-gray-500 text-[8px] leading-none">{d.cal > 0 ? Math.round(d.cal) : ''}</span>
                 <div className="w-full flex items-end" style={{ height: 90 }}>
-                  <div
-                    className={`w-full rounded-t ${barColor} transition-all`}
-                    style={{ height: `${Math.max(pct, d.cal > 0 ? 4 : 1)}%` }}
-                  />
+                  <div className="w-full flex flex-col-reverse rounded-t overflow-hidden" style={{ height: `${barH}%` }}>
+                    {d.cal === 0 ? (
+                      <div className="w-full h-full bg-gray-700" />
+                    ) : (
+                      <>
+                        <div className="w-full bg-blue-500" style={{ height: `${(pCal / sum) * 100}%` }} />
+                        <div className="w-full bg-amber-500" style={{ height: `${(fCal / sum) * 100}%` }} />
+                        <div className="w-full bg-green-500" style={{ height: `${(cCal / sum) * 100}%` }} />
+                        {oCal > 0 && <div className="w-full bg-gray-500" style={{ height: `${(oCal / sum) * 100}%` }} />}
+                      </>
+                    )}
+                  </div>
                 </div>
                 <span className="text-gray-600 text-[8px] leading-none">{period <= 14 ? shortDay(d.date) : ''}</span>
               </div>
