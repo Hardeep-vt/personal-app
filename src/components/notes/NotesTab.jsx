@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, updateRow } from '../../services/sheets'
+import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 function uid() { return Date.now().toString(36) }
@@ -29,6 +29,18 @@ export default function NotesTab() {
   function allTags() {
     const tags = rows.flatMap(r => r.tags ? r.tags.split(',').map(t => t.trim()).filter(Boolean) : [])
     return [...new Set(tags)]
+  }
+
+  async function handleDelete() {
+    if (!editing || editing.id === 'new') return
+    if (!window.confirm('Delete this note?')) return
+    try {
+      const allRows = await getRows(spreadsheetId, SHEETS.NOTES)
+      const idx = allRows.findIndex(r => r.id === editing.id)
+      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.NOTES, idx)
+      setRows(prev => prev.filter(r => r.id !== editing.id))
+      setEditing(null)
+    } catch (e) { console.error(e) }
   }
 
   async function handleSave() {
@@ -66,12 +78,17 @@ export default function NotesTab() {
       <div className="flex flex-col h-full px-4 py-4 min-h-[calc(100svh-120px)]">
         <div className="flex items-center justify-between mb-3">
           <button onClick={() => setEditing(null)} className="text-gray-400 text-sm active:text-white">← Back</button>
-          <button
-            onClick={handleSave} disabled={saving}
-            className="bg-violet-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          <div className="flex items-center gap-3">
+            {editing.id !== 'new' && (
+              <button onClick={handleDelete} className="text-gray-600 active:text-red-400 text-base">🗑</button>
+            )}
+            <button
+              onClick={handleSave} disabled={saving}
+              className="bg-violet-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </div>
         <input
           placeholder="Title"

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow } from '../../services/sheets'
+import { getRows, appendRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
@@ -35,6 +35,16 @@ export default function FoodTab() {
       console.error(e)
     }
     setLoading(false)
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this entry?')) return
+    try {
+      const allRows = await getRows(spreadsheetId, SHEETS.FOOD)
+      const idx = allRows.findIndex(r => r.id === id)
+      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.FOOD, idx)
+      setRows(prev => prev.filter(r => r.id !== id))
+    } catch (e) { console.error(e) }
   }
 
   async function handleAdd(e) {
@@ -100,7 +110,10 @@ export default function FoodTab() {
                         <span className="text-white text-sm">{r.food_name}</span>
                         <span className="text-gray-500 text-xs ml-2">{r.quantity}{r.unit}</span>
                       </div>
-                      <span className="text-indigo-400 text-sm font-medium">{r.calories} kcal</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-indigo-400 text-sm font-medium">{r.calories} kcal</span>
+                        <button onClick={() => handleDelete(r.id)} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
+                      </div>
                     </div>
                   ))}
                 </div>

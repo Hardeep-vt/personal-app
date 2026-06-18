@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, updateRow } from '../../services/sheets'
+import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 function uid() { return Date.now().toString(36) }
@@ -74,6 +74,26 @@ function PersonDetail({ person, onBack, spreadsheetId, onSaved }) {
       await loadInteractions()
     } catch (e) { console.error(e) }
     setSaving(false)
+  }
+
+  async function handleDeletePerson() {
+    if (!window.confirm(`Delete ${person.name} and all their interactions?`)) return
+    try {
+      // Delete all interactions for this person (reverse order to preserve indices)
+      const allInteractions = await getRows(spreadsheetId, SHEETS.INTERACTIONS)
+      const personInteractions = allInteractions
+        .map((r, i) => ({ ...r, _idx: i }))
+        .filter(r => r.person_id === person.id)
+        .reverse()
+      for (const r of personInteractions) {
+        await deleteRow(spreadsheetId, SHEETS.INTERACTIONS, r._idx)
+      }
+      // Delete the person
+      const allPeople = await getRows(spreadsheetId, SHEETS.PEOPLE)
+      const idx = allPeople.findIndex(r => r.id === person.id)
+      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.PEOPLE, idx)
+      onBack()
+    } catch (e) { console.error(e) }
   }
 
   async function handleSaveEdit(e) {
@@ -168,7 +188,10 @@ function PersonDetail({ person, onBack, spreadsheetId, onSaved }) {
       {/* Header */}
       <div className="px-4 py-4 flex items-center justify-between">
         <button onClick={onBack} className="text-gray-400 text-sm active:text-white">← People</button>
-        <button onClick={() => setEditing(true)} className="text-indigo-400 text-sm active:text-indigo-200">Edit</button>
+        <div className="flex items-center gap-4">
+          <button onClick={handleDeletePerson} className="text-gray-600 active:text-red-400 text-base">🗑</button>
+          <button onClick={() => setEditing(true)} className="text-indigo-400 text-sm active:text-indigo-200">Edit</button>
+        </div>
       </div>
 
       {/* Profile card */}

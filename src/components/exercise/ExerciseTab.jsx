@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow } from '../../services/sheets'
+import { getRows, appendRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 const EXERCISE_TYPES = ['Weights', 'Cardio', 'Yoga', 'Sports', 'Walk/Run', 'Other']
@@ -31,6 +31,16 @@ export default function ExerciseTab() {
       setRows(data)
     } catch (e) { console.error(e) }
     setLoading(false)
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this entry?')) return
+    try {
+      const allRows = await getRows(spreadsheetId, SHEETS.EXERCISE)
+      const idx = allRows.findIndex(r => r.id === id)
+      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.EXERCISE, idx)
+      setRows(prev => prev.filter(r => r.id !== id))
+    } catch (e) { console.error(e) }
   }
 
   async function handleAdd(e) {
@@ -75,7 +85,10 @@ export default function ExerciseTab() {
             <div key={r.id} className="bg-gray-800 rounded-xl px-4 py-3">
               <div className="flex items-center justify-between">
                 <span className="text-white font-medium text-sm">{r.exercise_type}</span>
-                {r.duration_min && <span className="text-emerald-400 text-sm">{r.duration_min} min</span>}
+                <div className="flex items-center gap-2">
+                  {r.duration_min && <span className="text-emerald-400 text-sm">{r.duration_min} min</span>}
+                  <button onClick={() => handleDelete(r.id)} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
+                </div>
               </div>
               <div className="flex gap-3 mt-1 text-gray-400 text-xs">
                 {r.sets && <span>{r.sets} sets</span>}

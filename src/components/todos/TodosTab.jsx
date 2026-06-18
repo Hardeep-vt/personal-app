@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, updateRow } from '../../services/sheets'
+import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 function uid() { return Date.now().toString(36) }
@@ -43,6 +43,16 @@ export default function TodosTab() {
       setShowForm(false)
     } catch (e) { console.error(e) }
     setSaving(false)
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this todo?')) return
+    try {
+      const allRows = await getRows(spreadsheetId, SHEETS.TODOS)
+      const idx = allRows.findIndex(r => r.id === id)
+      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.TODOS, idx)
+      setRows(prev => prev.filter(r => r.id !== id))
+    } catch (e) { console.error(e) }
   }
 
   async function toggleDone(todo, idx) {
@@ -151,9 +161,12 @@ export default function TodosTab() {
                   {r.due_date && <span className="text-gray-500 text-xs">{r.due_date}</span>}
                 </div>
               </div>
-              <div className={`shrink-0 flex items-center gap-1 ${priorityColor[r.priority]}`}>
-                <div className={`w-1.5 h-1.5 rounded-full ${priorityDot[r.priority]}`} />
-                <span className="text-xs">{r.priority}</span>
+              <div className="shrink-0 flex items-center gap-2">
+                <div className={`flex items-center gap-1 ${priorityColor[r.priority]}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${priorityDot[r.priority]}`} />
+                  <span className="text-xs">{r.priority}</span>
+                </div>
+                <button onClick={() => handleDelete(r.id)} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
               </div>
             </div>
           ))}
