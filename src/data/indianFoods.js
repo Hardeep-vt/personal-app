@@ -195,6 +195,7 @@ export default [
   { name: 'Grapes', calories: 60, protein: 1, fat: 0, carbs: 16, unit: 'cup', quantity: 1, health: 'green' },
   { name: 'Guava', calories: 40, protein: 1, fat: 1, carbs: 8, unit: 'piece', quantity: 1, health: 'green' },
   { name: 'Chikoo (Sapota)', calories: 100, protein: 1, fat: 1, carbs: 24, unit: 'piece', quantity: 1, health: 'orange' },
+  { name: 'Avocado', calories: 240, protein: 3, fat: 22, carbs: 13, unit: 'piece', quantity: 1, health: 'green' },
 
   // ── Dry Fruits & Nuts ──
   { name: 'Almonds', calories: 160, protein: 6, fat: 14, carbs: 6, unit: '10 pieces', quantity: 1, health: 'green' },
@@ -213,4 +214,5 @@ export default [
   { name: 'French Fries', calories: 320, protein: 4, fat: 16, carbs: 40, unit: 'medium', quantity: 1, health: 'red' },
   { name: 'Salad (green)', calories: 50, protein: 2, fat: 1, carbs: 8, unit: 'cup', quantity: 1, health: 'green' },
   { name: 'Protein Shake', calories: 200, protein: 25, fat: 4, carbs: 14, unit: 'scoop+milk', quantity: 1, health: 'green' },
+  { name: 'Whey Protein (scoop)', calories: 120, protein: 24, fat: 2, carbs: 3, unit: 'scoop', quantity: 1, health: 'green' },
 ]
