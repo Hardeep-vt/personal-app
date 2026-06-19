@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import indianFoods from '../../data/indianFoods'
 
 const PERIODS = [
@@ -13,7 +13,7 @@ function lookupHealth(foodName) {
 }
 
 function dateStr(d) {
-  return d.toISOString().split('T')[0]
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function shortDay(dateString) {
@@ -26,8 +26,65 @@ function shortDate(dateString) {
   return d.toLocaleDateString('en', { month: 'short', day: 'numeric' })
 }
 
-export default function NutritionDashboard({ rows }) {
+function combineDateTime(dateString, timeString) {
+  return new Date(`${dateString}T${timeString}:00`).getTime()
+}
+
+function formatTime12(timeString) {
+  const [h, m] = timeString.split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`
+}
+
+function formatDuration(ms) {
+  const totalMin = Math.max(0, Math.round(ms / 60000))
+  return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
+}
+
+function useFastingStats(mealTimes) {
+  return useMemo(() => {
+    const byDate = {}
+    mealTimes.forEach(t => {
+      if (!t.time) return
+      if (!byDate[t.date]) byDate[t.date] = []
+      byDate[t.date].push(t.time)
+    })
+    Object.values(byDate).forEach(arr => arr.sort())
+    const dates = Object.keys(byDate).sort()
+    if (dates.length === 0) return null
+
+    const lastDate = dates[dates.length - 1]
+    const lastDateTimes = byDate[lastDate]
+    const firstOfLast = lastDateTimes[0]
+    const lastOfLast = lastDateTimes[lastDateTimes.length - 1]
+    const lastMealEpoch = combineDateTime(lastDate, lastOfLast)
+
+    let overnightMs = null
+    if (dates.length > 1) {
+      const prevDate = dates[dates.length - 2]
+      const prevLastTime = byDate[prevDate][byDate[prevDate].length - 1]
+      overnightMs = combineDateTime(lastDate, firstOfLast) - combineDateTime(prevDate, prevLastTime)
+    }
+
+    return {
+      lastDate,
+      lastOfLast,
+      lastMealEpoch,
+      overnightMs,
+    }
+  }, [mealTimes])
+}
+
+export default function NutritionDashboard({ rows, mealTimes = [] }) {
   const [period, setPeriod] = useState(7)
+  const [now, setNow] = useState(() => Date.now())
+  const fasting = useFastingStats(mealTimes)
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(t)
+  }, [])
 
   const { days, avgCal, avgP, avgF, avgC, maxCal, healthPct, daysLogged, topFoods } = useMemo(() => {
     const now = new Date()
@@ -106,6 +163,28 @@ export default function NutritionDashboard({ rows }) {
           </button>
         ))}
       </div>
+
+      {/* Fasting */}
+      {fasting && (
+        <div className="bg-gray-800 rounded-xl p-3">
+          <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Fasting</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-amber-400 text-xl font-bold">{formatDuration(now - fasting.lastMealEpoch)}</div>
+              <div className="text-gray-500 text-xs mt-0.5">
+                since last meal at {formatTime12(fasting.lastOfLast)}
+                {fasting.lastDate !== dateStr(new Date()) ? ` (${fasting.lastDate})` : ''}
+              </div>
+            </div>
+            {fasting.overnightMs !== null && (
+              <div className="text-right">
+                <div className="text-indigo-400 text-sm font-semibold">{formatDuration(fasting.overnightMs)}</div>
+                <div className="text-gray-500 text-xs">last fast</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-2">

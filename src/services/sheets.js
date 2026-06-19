@@ -51,6 +51,7 @@ export async function getOrCreateSpreadsheet(name) {
         { properties: { title: 'todos' } },
         { properties: { title: 'people' } },
         { properties: { title: 'interactions' } },
+        { properties: { title: 'meal_times' } },
       ],
     }),
   })
@@ -63,7 +64,7 @@ export async function getOrCreateSpreadsheet(name) {
 async function ensureSheets(spreadsheetId) {
   const meta = await req(`${BASE}/${spreadsheetId}`)
   const existing = meta.sheets.map(s => s.properties.title)
-  const needed = ['people', 'interactions']
+  const needed = ['people', 'interactions', 'meal_times']
   const toCreate = needed.filter(n => !existing.includes(n))
   if (toCreate.length > 0) {
     await req(`${BASE}/${spreadsheetId}:batchUpdate`, {
@@ -72,9 +73,17 @@ async function ensureSheets(spreadsheetId) {
         requests: toCreate.map(title => ({ addSheet: { properties: { title } } })),
       }),
     })
-    await writePeopleHeaders(spreadsheetId)
+    if (toCreate.includes('people') || toCreate.includes('interactions')) await writePeopleHeaders(spreadsheetId)
+    if (toCreate.includes('meal_times')) await writeMealTimesHeaders(spreadsheetId)
   }
   await ensureFoodMacroHeaders(spreadsheetId)
+}
+
+async function writeMealTimesHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/meal_times!A1:C1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['date', 'meal_type', 'time']] }),
+  })
 }
 
 async function ensureFoodMacroHeaders(spreadsheetId) {
@@ -96,6 +105,7 @@ async function writeHeaders(spreadsheetId) {
     { range: 'todos!A1', values: [['id', 'title', 'description', 'horizon', 'context', 'priority', 'due_date', 'status', 'created_at']] },
     { range: 'people!A1', values: [['id', 'name', 'birthday', 'relationship', 'how_met', 'location', 'tags', 'notes', 'created_at', 'updated_at']] },
     { range: 'interactions!A1', values: [['id', 'person_id', 'date', 'summary', 'created_at']] },
+    { range: 'meal_times!A1', values: [['date', 'meal_type', 'time']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST',

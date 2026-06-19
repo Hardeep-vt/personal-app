@@ -11,4 +11,5 @@ export const SHEETS = {
   TODOS: 'todos',
   PEOPLE: 'people',
   INTERACTIONS: 'interactions',
+  MEAL_TIMES: 'meal_times',
 }
