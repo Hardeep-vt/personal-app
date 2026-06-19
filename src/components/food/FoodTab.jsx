@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
@@ -7,12 +7,27 @@ import NutritionDashboard from './NutritionDashboard'
 
 const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
 
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr(new Date())
 }
 
 function uid() {
   return Date.now().toString(36)
+}
+
+function dayBefore(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() - 1)
+  return localDateStr(d)
+}
+
+function nowTimeStr() {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const HEALTH_COLORS = {
@@ -26,6 +41,19 @@ function lookupHealth(foodName) {
   return match?.health || null
 }
 
+function getQuickFoods(rows) {
+  const map = new Map()
+  const sorted = [...rows].sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id))
+  for (const r of sorted) {
+    if (!r.food_name) continue
+    const key = r.food_name.toLowerCase()
+    map.set(key, { ...r, count: (map.get(key)?.count || 0) + 1 })
+  }
+  return [...map.values()]
+    .sort((a, b) => b.count - a.count || (b.date + b.id).localeCompare(a.date + a.id))
+    .slice(0, 8)
+}
+
 function MacroBar({ label, value, color, max }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0
   return (
@@ -36,6 +64,66 @@ function MacroBar({ label, value, color, max }) {
       </div>
       <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${color.replace('text-', 'bg-')}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+const SWIPE_OPEN_X = -76
+
+function SwipeRow({ onDelete, children }) {
+  const [translateX, setTranslateX] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const startX = useRef(0)
+  const startY = useRef(0)
+  const startTranslate = useRef(0)
+  const isHorizontal = useRef(null)
+
+  function handleTouchStart(e) {
+    startX.current = e.touches[0].clientX
+    startY.current = e.touches[0].clientY
+    startTranslate.current = translateX
+    isHorizontal.current = null
+  }
+
+  function handleTouchMove(e) {
+    const dx = e.touches[0].clientX - startX.current
+    const dy = e.touches[0].clientY - startY.current
+    if (isHorizontal.current === null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+      isHorizontal.current = Math.abs(dx) > Math.abs(dy)
+    }
+    if (!isHorizontal.current) return
+    setDragging(true)
+    let next = startTranslate.current + dx
+    if (next > 0) next = 0
+    if (next < SWIPE_OPEN_X) next = SWIPE_OPEN_X
+    setTranslateX(next)
+  }
+
+  function handleTouchEnd() {
+    setDragging(false)
+    setTranslateX(translateX < SWIPE_OPEN_X / 2 ? SWIPE_OPEN_X : 0)
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-lg">
+      <div className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-500" style={{ width: `${-SWIPE_OPEN_X}px` }}>
+        <button
+          onClick={() => { onDelete(); setTranslateX(0) }}
+          className="text-white text-xs font-medium w-full h-full flex items-center justify-center"
+        >
+          Delete
+        </button>
+      </div>
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClickCapture={e => { if (translateX !== 0) { e.preventDefault(); e.stopPropagation(); setTranslateX(0) } }}
+        style={{ transform: `translateX(${translateX}px)`, transition: dragging ? 'none' : 'transform 0.2s ease' }}
+        className="relative"
+      >
+        {children}
       </div>
     </div>
   )
@@ -150,6 +238,7 @@ function FoodSearch({ onSelect }) {
 export default function FoodTab() {
   const { spreadsheetId } = useAuth()
   const [rows, setRows] = useState([])
+  const [mealTimes, setMealTimes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -157,6 +246,9 @@ export default function FoodTab() {
   const [saving, setSaving] = useState(false)
   const [selectedDate, setSelectedDate] = useState(today())
   const [view, setView] = useState('log')
+  const [showCopyPanel, setShowCopyPanel] = useState(false)
+  const [copySourceDate, setCopySourceDate] = useState('')
+  const [copying, setCopying] = useState(false)
 
   useEffect(() => {
     load()
@@ -165,12 +257,39 @@ export default function FoodTab() {
   async function load() {
     setLoading(true)
     try {
-      const data = await getRows(spreadsheetId, SHEETS.FOOD)
+      const [data, times] = await Promise.all([
+        getRows(spreadsheetId, SHEETS.FOOD),
+        getRows(spreadsheetId, SHEETS.MEAL_TIMES),
+      ])
       setRows(data)
+      setMealTimes(times)
     } catch (e) {
       console.error(e)
     }
     setLoading(false)
+  }
+
+  function getMealTime(date, mealType) {
+    return mealTimes.find(t => t.date === date && t.meal_type === mealType)?.time || ''
+  }
+
+  async function ensureMealTime(date, mealType) {
+    if (mealTimes.some(t => t.date === date && t.meal_type === mealType)) return
+    await appendRow(spreadsheetId, SHEETS.MEAL_TIMES, [date, mealType, nowTimeStr()])
+  }
+
+  async function handleMealTimeChange(mealType, time) {
+    const idx = mealTimes.findIndex(t => t.date === selectedDate && t.meal_type === mealType)
+    try {
+      if (idx !== -1) {
+        await updateRow(spreadsheetId, SHEETS.MEAL_TIMES, idx, [selectedDate, mealType, time])
+      } else {
+        await appendRow(spreadsheetId, SHEETS.MEAL_TIMES, [selectedDate, mealType, time])
+      }
+      await load()
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   async function handleDelete(id) {
@@ -197,6 +316,7 @@ export default function FoodTab() {
       } else {
         const row = [uid(), selectedDate, form.meal_type, form.food_name, form.quantity, form.unit, form.calories, form.protein || '0', form.fat || '0', form.carbs || '0', form.health || '']
         await appendRow(spreadsheetId, SHEETS.FOOD, row)
+        await ensureMealTime(selectedDate, form.meal_type)
       }
       await load()
       closeForm()
@@ -205,6 +325,45 @@ export default function FoodTab() {
       alert('Failed to save. Please try again.')
     }
     setSaving(false)
+  }
+
+  function openCopyPanel() {
+    setCopySourceDate(dayBefore(selectedDate))
+    setShowCopyPanel(true)
+  }
+
+  async function handleCopyDay() {
+    const sourceRows = rows.filter(r => r.date === copySourceDate)
+    if (sourceRows.length === 0) {
+      alert('No entries found for that date.')
+      return
+    }
+    if (!window.confirm(`Copy ${sourceRows.length} entr${sourceRows.length === 1 ? 'y' : 'ies'} from ${copySourceDate} to ${selectedDate}?`)) return
+    setCopying(true)
+    try {
+      for (const r of sourceRows) {
+        const row = [uid(), selectedDate, r.meal_type, r.food_name, r.quantity, r.unit, r.calories, r.protein || '0', r.fat || '0', r.carbs || '0', r.health || '']
+        await appendRow(spreadsheetId, SHEETS.FOOD, row)
+      }
+      const mealTypesCopied = [...new Set(sourceRows.map(r => r.meal_type))]
+      for (const mealType of mealTypesCopied) {
+        const sourceTime = getMealTime(copySourceDate, mealType)
+        if (sourceTime) await handleMealTimeChange(mealType, sourceTime)
+      }
+      await load()
+      setShowCopyPanel(false)
+    } catch (e) {
+      console.error(e)
+      alert('Failed to copy entries. Please try again.')
+    }
+    setCopying(false)
+  }
+
+  function openAddForm(mealType = 'Breakfast') {
+    setEditingId(null)
+    baseRef.current = null
+    setForm({ meal_type: mealType, food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' })
+    setShowForm(true)
   }
 
   function closeForm() {
@@ -278,6 +437,8 @@ export default function FoodTab() {
     return acc
   }, {})
 
+  const quickFoods = useMemo(() => getQuickFoods(rows), [rows])
+
   return (
     <div className="px-4 py-4">
       {/* View toggle */}
@@ -306,22 +467,51 @@ export default function FoodTab() {
             <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <NutritionDashboard rows={rows} />
+          <NutritionDashboard rows={rows} mealTimes={mealTimes} />
         )
       ) : (
       <>
       <div className="flex items-center justify-between mb-3">
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={e => setSelectedDate(e.target.value)}
-          className="bg-gray-800 text-white text-sm rounded-lg px-3 py-1.5 border border-gray-700"
-        />
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            className="bg-gray-800 text-white text-sm rounded-lg px-3 py-1.5 border border-gray-700"
+          />
+          <button
+            onClick={openCopyPanel}
+            aria-label="Copy meals from another day"
+            className="text-gray-400 active:text-white text-base px-1.5 py-1.5 bg-gray-800 rounded-lg border border-gray-700"
+          >
+            ⧉
+          </button>
+        </div>
         <div className="text-right">
           <div className="text-2xl font-bold text-indigo-400">{Math.round(totalCalories)}</div>
           <div className="text-gray-500 text-xs">kcal today</div>
         </div>
       </div>
+
+      {showCopyPanel && (
+        <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 mb-4 flex items-center gap-2">
+          <span className="text-gray-400 text-xs whitespace-nowrap">Copy from</span>
+          <input
+            type="date"
+            value={copySourceDate}
+            onChange={e => setCopySourceDate(e.target.value)}
+            className="flex-1 bg-gray-900 text-white text-sm rounded-lg px-2 py-1.5 border border-gray-700"
+          />
+          <button
+            onClick={handleCopyDay}
+            disabled={copying}
+            className="bg-indigo-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg active:scale-95 transition-transform disabled:opacity-50"
+          >
+            {copying ? 'Copying…' : 'Copy'}
+          </button>
+          <button onClick={() => setShowCopyPanel(false)} className="text-gray-500 text-xs px-1">✕</button>
+        </div>
+      )}
 
       {/* Macro summary */}
       <div className="flex gap-3 mb-4">
@@ -339,7 +529,25 @@ export default function FoodTab() {
           {MEAL_TYPES.map(meal => (
             <div key={meal} className="mb-4">
               <div className="flex items-center justify-between mb-1">
-                <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider">{meal}</h3>
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider">{meal}</h3>
+                  <button
+                    onClick={() => openAddForm(meal)}
+                    aria-label={`Add to ${meal}`}
+                    className="w-4 h-4 rounded-full border border-indigo-400/60 text-indigo-400 text-xs leading-none flex items-center justify-center active:bg-indigo-400/20"
+                  >
+                    +
+                  </button>
+                  {byMeal[meal].length > 0 && (
+                    <input
+                      type="time"
+                      value={getMealTime(selectedDate, meal)}
+                      onChange={e => handleMealTimeChange(meal, e.target.value)}
+                      aria-label={`${meal} time`}
+                      className="bg-transparent text-gray-500 text-[11px] border-none outline-none p-0 w-[68px]"
+                    />
+                  )}
+                </div>
                 <span className="text-gray-600 text-xs">
                   {Math.round(byMeal[meal].reduce((s, r) => s + (parseFloat(r.calories) || 0), 0))} kcal
                 </span>
@@ -352,26 +560,25 @@ export default function FoodTab() {
                     const health = r.health || lookupHealth(r.food_name)
                     const hc = HEALTH_COLORS[health] || {}
                     return (
-                    <div key={r.id} onClick={() => handleEdit(r)} className={`bg-gray-800 rounded-lg px-3 py-2 active:bg-gray-700 cursor-pointer ${health ? 'border-l-2 ' + hc.bg : ''}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {health && <div className={`w-2 h-2 rounded-full shrink-0 ${hc.dot}`} />}
-                          <span className="text-white text-sm">{r.food_name}</span>
-                          <span className="text-gray-500 text-xs">{r.quantity} {r.unit}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
+                    <SwipeRow key={r.id} onDelete={() => handleDelete(r.id)}>
+                      <div onClick={() => handleEdit(r)} className={`bg-gray-800 px-3 py-2 active:bg-gray-700 cursor-pointer ${health ? 'border-l-2 ' + hc.bg : ''}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {health && <div className={`w-2 h-2 rounded-full shrink-0 ${hc.dot}`} />}
+                            <span className="text-white text-sm">{r.food_name}</span>
+                            <span className="text-gray-500 text-xs">{r.quantity} {r.unit}</span>
+                          </div>
                           <span className="text-indigo-400 text-sm font-medium">{r.calories} kcal</span>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(r.id) }} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
                         </div>
+                        {(r.protein || r.fat || r.carbs) && (
+                          <div className="flex gap-3 mt-0.5 text-xs ml-4">
+                            <span className="text-blue-400">P {r.protein}g</span>
+                            <span className="text-amber-400">F {r.fat}g</span>
+                            <span className="text-green-400">C {r.carbs}g</span>
+                          </div>
+                        )}
                       </div>
-                      {(r.protein || r.fat || r.carbs) && (
-                        <div className="flex gap-3 mt-0.5 text-xs ml-4">
-                          <span className="text-blue-400">P {r.protein}g</span>
-                          <span className="text-amber-400">F {r.fat}g</span>
-                          <span className="text-green-400">C {r.carbs}g</span>
-                        </div>
-                      )}
-                    </div>
+                    </SwipeRow>
                   )})}
 
                 </div>
@@ -404,6 +611,33 @@ export default function FoodTab() {
                 </button>
               ))}
             </div>
+
+            {quickFoods.length > 0 && !form.food_name && (
+              <div>
+                <div className="text-gray-500 text-xs mb-1.5">Quick add</div>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {quickFoods.map(qf => (
+                    <button
+                      key={qf.food_name}
+                      type="button"
+                      onClick={() => handleFoodSelect({
+                        name: qf.food_name,
+                        calories: parseFloat(qf.calories) || 0,
+                        protein: parseFloat(qf.protein) || 0,
+                        fat: parseFloat(qf.fat) || 0,
+                        carbs: parseFloat(qf.carbs) || 0,
+                        unit: qf.unit,
+                        quantity: parseFloat(qf.quantity) || 1,
+                        health: qf.health,
+                      })}
+                      className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-full text-xs text-white active:bg-gray-700"
+                    >
+                      {qf.food_name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <FoodSearch onSelect={handleFoodSelect} />
 
@@ -480,7 +714,7 @@ export default function FoodTab() {
       )}
 
       <button
-        onClick={() => { setEditingId(null); setForm({ meal_type: 'Breakfast', food_name: '', quantity: '', unit: 'g', calories: '', protein: '', fat: '', carbs: '', health: '' }); setShowForm(true) }}
+        onClick={() => openAddForm('Breakfast')}
         className="fixed bottom-20 right-4 w-12 h-12 bg-indigo-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform z-40"
       >
         +
