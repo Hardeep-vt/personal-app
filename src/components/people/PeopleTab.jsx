@@ -30,6 +30,60 @@ function upcomingBirthday(dateStr) {
   return null
 }
 
+function tagsToArray(str) {
+  return (str || '').split(',').map(t => t.trim()).filter(Boolean)
+}
+
+function getAllTags(people) {
+  const set = new Set()
+  for (const p of people) for (const t of tagsToArray(p.tags)) set.add(t)
+  return Array.from(set).sort((a, b) => a.localeCompare(b))
+}
+
+function TagPicker({ allTags, value, onChange }) {
+  const [newTag, setNewTag] = useState('')
+  const selected = tagsToArray(value)
+  const combined = Array.from(new Set([...allTags, ...selected]))
+
+  function toggle(tag) {
+    const next = selected.includes(tag) ? selected.filter(t => t !== tag) : [...selected, tag]
+    onChange(next.join(', '))
+  }
+
+  function addNew() {
+    const t = newTag.trim()
+    if (!t) return
+    if (!selected.includes(t)) onChange([...selected, t].join(', '))
+    setNewTag('')
+  }
+
+  return (
+    <div>
+      <label className="text-gray-500 text-xs mb-1 block">Tags</label>
+      {combined.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-2">
+          {combined.map(tag => (
+            <button key={tag} type="button" onClick={() => toggle(tag)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${selected.includes(tag) ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+            >{tag}</button>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          placeholder="New tag…" value={newTag}
+          onChange={e => setNewTag(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addNew() } }}
+          className="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 text-sm border border-gray-700 outline-none focus:border-indigo-500"
+        />
+        <button type="button" onClick={addNew} className="bg-gray-800 text-indigo-400 text-sm font-medium px-3 rounded-lg border border-gray-700 active:text-indigo-200">
+          Add
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const AVATAR_COLORS = [
   'bg-indigo-600', 'bg-violet-600', 'bg-rose-600', 'bg-amber-600',
   'bg-emerald-600', 'bg-sky-600', 'bg-pink-600', 'bg-teal-600',
@@ -42,7 +96,7 @@ function avatarColor(name) {
 
 // ── Person detail view ──────────────────────────────────────────────────────
 
-function PersonDetail({ person, onBack, spreadsheetId, onSaved }) {
+function PersonDetail({ person, onBack, spreadsheetId, onSaved, allTags }) {
   const [interactions, setInteractions] = useState([])
   const [loading, setLoading] = useState(true)
   const [showLogForm, setShowLogForm] = useState(false)
@@ -164,10 +218,10 @@ function PersonDetail({ person, onBack, spreadsheetId, onSaved }) {
             value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))}
             className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500"
           />
-          <input
-            placeholder="Tags (comma separated)"
-            value={editForm.tags} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))}
-            className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500"
+          <TagPicker
+            allTags={allTags}
+            value={editForm.tags}
+            onChange={tags => setEditForm(f => ({ ...f, tags }))}
           />
           <div>
             <label className="text-gray-500 text-xs mb-1 block">General notes</label>
@@ -356,11 +410,14 @@ export default function PeopleTab() {
     setSaving(false)
   }
 
+  const allTags = getAllTags(people)
+
   if (selected) {
     return (
       <PersonDetail
         person={selected}
         spreadsheetId={spreadsheetId}
+        allTags={allTags}
         onBack={() => setSelected(null)}
         onSaved={(updated) => {
           setPeople(prev => prev.map(p => p.id === updated.id ? updated : p))
@@ -394,6 +451,8 @@ export default function PeopleTab() {
           ))}
         </div>
       )}
+
+      <h1 className="text-white text-lg font-semibold mb-2">People</h1>
 
       <input
         placeholder="Search people…"
@@ -495,10 +554,10 @@ export default function PeopleTab() {
               value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
               className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500"
             />
-            <input
-              placeholder="Tags (comma separated)"
-              value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))}
-              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500"
+            <TagPicker
+              allTags={allTags}
+              value={form.tags}
+              onChange={tags => setForm(f => ({ ...f, tags }))}
             />
             <textarea
               placeholder="Notes about this person…"
