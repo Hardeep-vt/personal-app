@@ -42,44 +42,42 @@ function formatDuration(ms) {
   return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
 }
 
-function useFastingStats(mealTimes) {
+function useFastingStats(mealTimes, now) {
   return useMemo(() => {
-    const byDate = {}
-    mealTimes.forEach(t => {
-      if (!t.time) return
-      if (!byDate[t.date]) byDate[t.date] = []
-      byDate[t.date].push(t.time)
-    })
-    Object.values(byDate).forEach(arr => arr.sort())
-    const dates = Object.keys(byDate).sort()
-    if (dates.length === 0) return null
+    const entries = mealTimes
+      .filter(t => t.date && t.time)
+      .map(t => ({ date: t.date, time: t.time, ts: combineDateTime(t.date, t.time) }))
+      .sort((a, b) => a.ts - b.ts)
+    if (entries.length === 0) return null
 
-    const lastDate = dates[dates.length - 1]
-    const lastDateTimes = byDate[lastDate]
-    const firstOfLast = lastDateTimes[0]
-    const lastOfLast = lastDateTimes[lastDateTimes.length - 1]
-    const lastMealEpoch = combineDateTime(lastDate, lastOfLast)
-
-    let overnightMs = null
-    if (dates.length > 1) {
-      const prevDate = dates[dates.length - 2]
-      const prevLastTime = byDate[prevDate][byDate[prevDate].length - 1]
-      overnightMs = combineDateTime(lastDate, firstOfLast) - combineDateTime(prevDate, prevLastTime)
+    // A fast is the gap between the last entry of one day and the first entry
+    // logged on a later day - however long that gap actually is.
+    const fasts = []
+    for (let i = 0; i < entries.length - 1; i++) {
+      if (entries[i].date !== entries[i + 1].date) {
+        fasts.push({ ms: entries[i + 1].ts - entries[i].ts, start: entries[i], end: entries[i + 1] })
+      }
     }
 
-    return {
-      lastDate,
-      lastOfLast,
-      lastMealEpoch,
-      overnightMs,
-    }
-  }, [mealTimes])
+    const last = entries[entries.length - 1]
+    const isOngoing = last.date !== dateStr(new Date(now))
+    const headline = isOngoing
+      ? { ongoing: true, ms: now - last.ts, since: last }
+      : fasts.length > 0
+        ? { ongoing: false, ms: fasts[fasts.length - 1].ms, start: fasts[fasts.length - 1].start, end: fasts[fasts.length - 1].end }
+        : null
+
+    const recentFasts = fasts.slice(-7)
+    const avgMs = recentFasts.length > 0 ? recentFasts.reduce((s, f) => s + f.ms, 0) / recentFasts.length : null
+
+    return { headline, avgMs, avgCount: recentFasts.length }
+  }, [mealTimes, now])
 }
 
 export default function NutritionDashboard({ rows, mealTimes = [] }) {
   const [period, setPeriod] = useState(7)
   const [now, setNow] = useState(() => Date.now())
-  const fasting = useFastingStats(mealTimes)
+  const fasting = useFastingStats(mealTimes, now)
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30000)
@@ -170,16 +168,23 @@ export default function NutritionDashboard({ rows, mealTimes = [] }) {
           <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Fasting</h3>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-amber-400 text-xl font-bold">{formatDuration(now - fasting.lastMealEpoch)}</div>
-              <div className="text-gray-500 text-xs mt-0.5">
-                since last meal at {formatTime12(fasting.lastOfLast)}
-                {fasting.lastDate !== dateStr(new Date()) ? ` (${fasting.lastDate})` : ''}
-              </div>
+              {fasting.headline ? (
+                <>
+                  <div className="text-amber-400 text-xl font-bold">{formatDuration(fasting.headline.ms)}</div>
+                  <div className="text-gray-500 text-xs mt-0.5">
+                    {fasting.headline.ongoing
+                      ? `ongoing, since ${formatTime12(fasting.headline.since.time)} (${fasting.headline.since.date})`
+                      : `${formatTime12(fasting.headline.start.time)} (${fasting.headline.start.date}) → ${formatTime12(fasting.headline.end.time)}`}
+                  </div>
+                </>
+              ) : (
+                <div className="text-gray-500 text-sm">Not enough data yet</div>
+              )}
             </div>
-            {fasting.overnightMs !== null && (
+            {fasting.avgMs !== null && (
               <div className="text-right">
-                <div className="text-indigo-400 text-sm font-semibold">{formatDuration(fasting.overnightMs)}</div>
-                <div className="text-gray-500 text-xs">last fast</div>
+                <div className="text-indigo-400 text-sm font-semibold">{formatDuration(fasting.avgMs)}</div>
+                <div className="text-gray-500 text-xs">{fasting.avgCount}-night avg</div>
               </div>
             )}
           </div>
