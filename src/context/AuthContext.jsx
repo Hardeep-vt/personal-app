@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { GOOGLE_CLIENT_ID, SCOPES, SPREADSHEET_NAME } from '../config'
+import { GOOGLE_CLIENT_ID, SCOPES, SPREADSHEET_NAME, SANDBOX_SPREADSHEET_NAME } from '../config'
 import { getOrCreateSpreadsheet } from '../services/sheets'
 
 const AuthContext = createContext(null)
@@ -8,26 +8,36 @@ export function AuthProvider({ children }) {
   const [status, setStatus] = useState('loading') // loading | unauthenticated | authenticated
   const [spreadsheetId, setSpreadsheetId] = useState(null)
   const [error, setError] = useState(null)
+  const [sandboxMode, setSandboxMode] = useState(localStorage.getItem('sandbox_mode') === 'true')
 
   useEffect(() => {
     const existing = sessionStorage.getItem('gtoken')
     if (existing) {
-      initSpreadsheet()
+      initSpreadsheet(sandboxMode)
     } else {
       setStatus('unauthenticated')
     }
   }, [])
 
-  async function initSpreadsheet() {
+  async function initSpreadsheet(useSandbox = sandboxMode) {
     try {
       setStatus('loading')
-      const id = await getOrCreateSpreadsheet(SPREADSHEET_NAME)
+      const name = useSandbox ? SANDBOX_SPREADSHEET_NAME : SPREADSHEET_NAME
+      const storageKey = useSandbox ? 'spreadsheet_id_sandbox' : 'spreadsheet_id'
+      const id = await getOrCreateSpreadsheet(name, storageKey)
       setSpreadsheetId(id)
       setStatus('authenticated')
     } catch (e) {
       setError(e.message)
       setStatus('unauthenticated')
     }
+  }
+
+  async function toggleSandbox() {
+    const next = !sandboxMode
+    localStorage.setItem('sandbox_mode', String(next))
+    setSandboxMode(next)
+    await initSpreadsheet(next)
   }
 
   function signIn() {
@@ -62,7 +72,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ status, spreadsheetId, signIn, signOut, error }}>
+    <AuthContext.Provider value={{ status, spreadsheetId, signIn, signOut, error, sandboxMode, toggleSandbox }}>
       {children}
     </AuthContext.Provider>
   )

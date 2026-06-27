@@ -3,6 +3,7 @@ export const GOOGLE_CLIENT_ID = '1002595393352-moml2mjleukgs1o3p77qjes2j949a0th.
 export const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file'
 
 export const SPREADSHEET_NAME = 'MyApp Data'
+export const SANDBOX_SPREADSHEET_NAME = 'MyApp Data (Sandbox)'
 
 export const SHEETS = {
   FOOD: 'food_log',
@@ -12,4 +13,5 @@ export const SHEETS = {
   PEOPLE: 'people',
   INTERACTIONS: 'interactions',
   MEAL_TIMES: 'meal_times',
+  TRASH: 'trash',
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
+import { getRows, appendRow, updateRow, deleteRow, softDeleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 function uid() { return Date.now().toString(36) }
@@ -88,10 +88,10 @@ function PersonDetail({ person, onBack, spreadsheetId, onSaved }) {
       for (const r of personInteractions) {
         await deleteRow(spreadsheetId, SHEETS.INTERACTIONS, r._idx)
       }
-      // Delete the person
+      // Soft-delete the person (interactions are hard-deleted above since they're not independently restorable)
       const allPeople = await getRows(spreadsheetId, SHEETS.PEOPLE)
       const idx = allPeople.findIndex(r => r.id === person.id)
-      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.PEOPLE, idx)
+      if (idx !== -1) await softDeleteRow(spreadsheetId, SHEETS.PEOPLE, idx, allPeople[idx])
       onBack()
     } catch (e) { console.error(e) }
   }

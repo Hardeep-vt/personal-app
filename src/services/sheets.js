@@ -21,8 +21,8 @@ async function req(url, options = {}) {
   return res.json()
 }
 
-export async function getOrCreateSpreadsheet(name) {
-  const stored = localStorage.getItem('spreadsheet_id')
+export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id') {
+  const stored = localStorage.getItem(storageKey)
   if (stored) {
     await ensureSheets(stored)
     return stored
@@ -35,7 +35,7 @@ export async function getOrCreateSpreadsheet(name) {
 
   if (search.files?.length > 0) {
     const id = search.files[0].id
-    localStorage.setItem('spreadsheet_id', id)
+    localStorage.setItem(storageKey, id)
     await ensureSheets(id)
     return id
   }
@@ -52,19 +52,20 @@ export async function getOrCreateSpreadsheet(name) {
         { properties: { title: 'people' } },
         { properties: { title: 'interactions' } },
         { properties: { title: 'meal_times' } },
+        { properties: { title: 'trash' } },
       ],
     }),
   })
 
   await writeHeaders(created.spreadsheetId)
-  localStorage.setItem('spreadsheet_id', created.spreadsheetId)
+  localStorage.setItem(storageKey, created.spreadsheetId)
   return created.spreadsheetId
 }
 
 async function ensureSheets(spreadsheetId) {
   const meta = await req(`${BASE}/${spreadsheetId}`)
   const existing = meta.sheets.map(s => s.properties.title)
-  const needed = ['people', 'interactions', 'meal_times']
+  const needed = ['people', 'interactions', 'meal_times', 'trash']
   const toCreate = needed.filter(n => !existing.includes(n))
   if (toCreate.length > 0) {
     await req(`${BASE}/${spreadsheetId}:batchUpdate`, {
@@ -75,8 +76,16 @@ async function ensureSheets(spreadsheetId) {
     })
     if (toCreate.includes('people') || toCreate.includes('interactions')) await writePeopleHeaders(spreadsheetId)
     if (toCreate.includes('meal_times')) await writeMealTimesHeaders(spreadsheetId)
+    if (toCreate.includes('trash')) await writeTrashHeaders(spreadsheetId)
   }
   await ensureFoodMacroHeaders(spreadsheetId)
+}
+
+async function writeTrashHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/trash!A1:E1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['id', 'sheet', 'original_id', 'data', 'deleted_at']] }),
+  })
 }
 
 async function writeMealTimesHeaders(spreadsheetId) {
@@ -106,6 +115,7 @@ async function writeHeaders(spreadsheetId) {
     { range: 'people!A1', values: [['id', 'name', 'birthday', 'relationship', 'how_met', 'location', 'tags', 'notes', 'created_at', 'updated_at']] },
     { range: 'interactions!A1', values: [['id', 'person_id', 'date', 'summary', 'created_at']] },
     { range: 'meal_times!A1', values: [['date', 'meal_type', 'time']] },
+    { range: 'trash!A1', values: [['id', 'sheet', 'original_id', 'data', 'deleted_at']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST',
@@ -163,4 +173,44 @@ export async function deleteRow(spreadsheetId, sheet, rowIndex) {
       }],
     }),
   })
+}
+
+function trashId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }
+
+// Moves a row to the trash sheet instead of permanently deleting it.
+export async function softDeleteRow(spreadsheetId, sheet, rowIndex, rowObj) {
+  const trashRow = [trashId(), sheet, rowObj.id || '', JSON.stringify(rowObj), new Date().toISOString()]
+  await appendRow(spreadsheetId, 'trash', trashRow)
+  await deleteRow(spreadsheetId, sheet, rowIndex)
+}
+
+export async function getTrash(spreadsheetId) {
+  return getRows(spreadsheetId, 'trash')
+}
+
+// Restores a trashed row back to its original sheet, then removes it from trash.
+export async function restoreTrashRow(spreadsheetId, trashRowIndex, trashRowObj) {
+  const data = JSON.parse(trashRowObj.data)
+  const headerData = await req(`${BASE}/${spreadsheetId}/values/${trashRowObj.sheet}!1:1`)
+  const headers = headerData.values?.[0] || Object.keys(data)
+  const row = headers.map(h => data[h] ?? '')
+  await appendRow(spreadsheetId, trashRowObj.sheet, row)
+  await deleteRow(spreadsheetId, 'trash', trashRowIndex)
+}
+
+export async function purgeTrashRow(spreadsheetId, trashRowIndex) {
+  await deleteRow(spreadsheetId, 'trash', trashRowIndex)
+}
+
+// Permanently removes trash entries older than maxAgeDays.
+export async function purgeOldTrash(spreadsheetId, maxAgeDays = 30) {
+  const rows = await getTrash(spreadsheetId)
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+  const toDelete = rows
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => new Date(r.deleted_at).getTime() < cutoff)
+    .sort((a, b) => b.i - a.i)
+  for (const { i } of toDelete) {
+    await deleteRow(spreadsheetId, 'trash', i)
+  }
 }

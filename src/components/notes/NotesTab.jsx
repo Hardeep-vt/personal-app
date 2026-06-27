@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
+import { getRows, appendRow, updateRow, softDeleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 function uid() { return Date.now().toString(36) }
@@ -37,7 +37,7 @@ export default function NotesTab() {
     try {
       const allRows = await getRows(spreadsheetId, SHEETS.NOTES)
       const idx = allRows.findIndex(r => r.id === editing.id)
-      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.NOTES, idx)
+      if (idx !== -1) await softDeleteRow(spreadsheetId, SHEETS.NOTES, idx, allRows[idx])
       setRows(prev => prev.filter(r => r.id !== editing.id))
       setEditing(null)
     } catch (e) { console.error(e) }

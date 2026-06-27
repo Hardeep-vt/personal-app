@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
+import { getRows, appendRow, updateRow, softDeleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
 function uid() { return Date.now().toString(36) }
@@ -50,7 +50,7 @@ export default function TodosTab() {
     try {
       const allRows = await getRows(spreadsheetId, SHEETS.TODOS)
       const idx = allRows.findIndex(r => r.id === id)
-      if (idx !== -1) await deleteRow(spreadsheetId, SHEETS.TODOS, idx)
+      if (idx !== -1) await softDeleteRow(spreadsheetId, SHEETS.TODOS, idx, allRows[idx])
       setRows(prev => prev.filter(r => r.id !== id))
     } catch (e) { console.error(e) }
   }

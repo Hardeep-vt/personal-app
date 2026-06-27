@@ -2,21 +2,17 @@ import { useState, useCallback } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import FoodTab from './components/food/FoodTab'
 import ExerciseTab from './components/exercise/ExerciseTab'
-import NotesTab from './components/notes/NotesTab'
-import TodosTab from './components/todos/TodosTab'
-import PeopleTab from './components/people/PeopleTab'
+import LifeTab from './components/life/LifeTab'
 import usePullToRefresh from './hooks/usePullToRefresh'
 
 const TABS = [
   { id: 'food', label: 'Food', icon: '🥗' },
   { id: 'exercise', label: 'Exercise', icon: '💪' },
-  { id: 'notes', label: 'Notes', icon: '📝' },
-  { id: 'todos', label: 'Todos', icon: '✅' },
-  { id: 'people', label: 'People', icon: '👥' },
+  { id: 'life', label: 'Life', icon: '📋' },
 ]
 
 function AppInner() {
-  const { status, signIn, signOut, error } = useAuth()
+  const { status, signIn, signOut, error, sandboxMode, toggleSandbox } = useAuth()
   const [activeTab, setActiveTab] = useState('food')
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
@@ -64,16 +60,31 @@ function AppInner() {
   const tabContent = {
     food: <FoodTab key={refreshKey} />,
     exercise: <ExerciseTab key={refreshKey} />,
-    notes: <NotesTab key={refreshKey} />,
-    todos: <TodosTab key={refreshKey} />,
-    people: <PeopleTab key={refreshKey} />,
+    life: <LifeTab key={refreshKey} />,
   }
 
   return (
     <div className="flex flex-col min-h-svh">
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-        <span className="text-white font-semibold text-lg">MyApp</span>
+        <div className="flex items-center gap-2">
+          <span className="text-white font-semibold text-lg">MyApp</span>
+          {sandboxMode && (
+            <span className="bg-amber-500/20 text-amber-400 text-[10px] font-semibold px-1.5 py-0.5 rounded">SANDBOX</span>
+          )}
+        </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => {
+              if (window.confirm(sandboxMode
+                ? 'Switch back to your live data?'
+                : 'Switch to a separate sandbox spreadsheet for testing? Your live data will not be touched.')) {
+                toggleSandbox()
+              }
+            }}
+            className={`text-xs px-1.5 py-0.5 rounded ${sandboxMode ? 'text-amber-400' : 'text-gray-500 active:text-gray-300'}`}
+          >
+            {sandboxMode ? 'Use live data' : 'Sandbox'}
+          </button>
           <button
             onClick={handleRefresh}
             className={`text-gray-400 active:text-white text-lg transition-transform ${refreshing ? 'animate-spin' : ''}`}
