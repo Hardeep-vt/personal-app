@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { getRows, appendRow, updateRow, deleteRow, softDeleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
@@ -51,6 +51,7 @@ function PersonDetail({ person, onBack, spreadsheetId, onSaved }) {
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({ ...person })
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the viewed person changes
   useEffect(() => { loadInteractions() }, [person.id])
 
   async function loadInteractions() {
@@ -330,6 +331,7 @@ export default function PeopleTab() {
   const [search, setSearch] = useState('')
   const [filterRel, setFilterRel] = useState('All')
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run once on mount
   useEffect(() => { load() }, [])
 
   async function load() {

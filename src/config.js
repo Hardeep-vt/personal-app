@@ -14,4 +14,9 @@ export const SHEETS = {
   INTERACTIONS: 'interactions',
   MEAL_TIMES: 'meal_times',
   TRASH: 'trash',
+  CALENDAR_EVENTS: 'calendar_events',
+  RECURRING_TEMPLATES: 'recurring_templates',
+  HABIT_COMPLETIONS: 'habit_completions',
 }
+
+export const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

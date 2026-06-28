@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../../context/AuthContext'
-import { getRows, appendRow, updateRow, softDeleteRow } from '../../services/sheets'
+import { useAuth } from '../../context/useAuth'
+import { getRows, appendRow, updateRow, softDeleteRow, createCalendarEvent } from '../../services/sheets'
 import { SHEETS } from '../../config'
+import { todayStr } from '../calendar/dateUtils'
 
 function uid() { return Date.now().toString(36) }
 function now() { return new Date().toISOString() }
@@ -10,9 +11,10 @@ const HORIZONS = ['Short-term', 'Long-term']
 const CONTEXTS = ['Personal', 'Professional']
 const PRIORITIES = ['High', 'Medium', 'Low']
 
-export default function TodosTab() {
+export default function TodosTab({ onJumpToCalendar }) {
   const { spreadsheetId } = useAuth()
   const [rows, setRows] = useState([])
+  const [calendarEvents, setCalendarEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ title: '', description: '', horizon: 'Short-term', context: 'Personal', priority: 'Medium', due_date: '' })
@@ -20,16 +22,54 @@ export default function TodosTab() {
   const [filterHorizon, setFilterHorizon] = useState('All')
   const [filterContext, setFilterContext] = useState('All')
   const [showDone, setShowDone] = useState(false)
+  const [scheduling, setScheduling] = useState(null) // todo row being scheduled
+  const [scheduleForm, setScheduleForm] = useState({ date: todayStr(), start_time: '09:00', end_time: '10:00' })
+  const [schedSaving, setSchedSaving] = useState(false)
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run once on mount
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
     try {
-      const data = await getRows(spreadsheetId, SHEETS.TODOS)
+      const [data, events] = await Promise.all([
+        getRows(spreadsheetId, SHEETS.TODOS),
+        getRows(spreadsheetId, SHEETS.CALENDAR_EVENTS),
+      ])
       setRows(data)
+      setCalendarEvents(events)
     } catch (e) { console.error(e) }
     setLoading(false)
+  }
+
+  function sessionsFor(todoId) {
+    return calendarEvents.filter(e => e.todo_id === todoId)
+  }
+
+  function openSchedule(todo) {
+    setScheduleForm({ date: todayStr(), start_time: '09:00', end_time: '10:00' })
+    setScheduling(todo)
+  }
+
+  async function handleAddSession(e) {
+    e.preventDefault()
+    setSchedSaving(true)
+    try {
+      await createCalendarEvent(spreadsheetId, { title: scheduling.title, ...scheduleForm, todo_id: scheduling.id })
+      const events = await getRows(spreadsheetId, SHEETS.CALENDAR_EVENTS)
+      setCalendarEvents(events)
+    } catch (e) { console.error(e) }
+    setSchedSaving(false)
+  }
+
+  async function handleUnlinkSession(ev) {
+    try {
+      const all = await getRows(spreadsheetId, SHEETS.CALENDAR_EVENTS)
+      const idx = all.findIndex(r => r.id === ev.id)
+      if (idx !== -1) await softDeleteRow(spreadsheetId, SHEETS.CALENDAR_EVENTS, idx, all[idx])
+      const events = await getRows(spreadsheetId, SHEETS.CALENDAR_EVENTS)
+      setCalendarEvents(events)
+    } catch (e) { console.error(e) }
   }
 
   async function handleAdd(e) {
@@ -55,7 +95,7 @@ export default function TodosTab() {
     } catch (e) { console.error(e) }
   }
 
-  async function toggleDone(todo, idx) {
+  async function toggleDone(todo) {
     const newStatus = todo.status === 'done' ? 'active' : 'done'
     try {
       const allRows = await getRows(spreadsheetId, SHEETS.TODOS)
@@ -161,12 +201,20 @@ export default function TodosTab() {
                   {r.due_date && <span className="text-gray-500 text-xs">{r.due_date}</span>}
                 </div>
               </div>
-              <div className="shrink-0 flex items-center gap-2">
-                <div className={`flex items-center gap-1 ${priorityColor[r.priority]}`}>
-                  <div className={`w-1.5 h-1.5 rounded-full ${priorityDot[r.priority]}`} />
-                  <span className="text-xs">{r.priority}</span>
+              <div className="shrink-0 flex flex-col items-end gap-1.5">
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-1 ${priorityColor[r.priority]}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${priorityDot[r.priority]}`} />
+                    <span className="text-xs">{r.priority}</span>
+                  </div>
+                  <button onClick={() => handleDelete(r.id)} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
                 </div>
-                <button onClick={() => handleDelete(r.id)} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
+                <button
+                  onClick={() => openSchedule(r)}
+                  className="text-[11px] font-medium text-indigo-400 active:text-indigo-300"
+                >
+                  {sessionsFor(r.id).length > 0 ? `🗓 ${sessionsFor(r.id).length} session${sessionsFor(r.id).length > 1 ? 's' : ''}` : '🗓 Schedule'}
+                </button>
               </div>
             </div>
           ))}
@@ -247,6 +295,55 @@ export default function TodosTab() {
       >
         +
       </button>
+
+      {scheduling && (
+        <div className="fixed inset-0 bg-black/70 flex items-end z-50" onClick={() => setScheduling(null)}>
+          <div onClick={e => e.stopPropagation()} className="bg-gray-900 w-full rounded-t-2xl p-5 space-y-3">
+            <h2 className="text-white font-semibold text-base mb-1">Schedule "{scheduling.title}"</h2>
+
+            {sessionsFor(scheduling.id).length > 0 && (
+              <div className="space-y-1.5">
+                {sessionsFor(scheduling.id).map(ev => (
+                  <div key={ev.id} className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
+                    <button onClick={() => onJumpToCalendar?.(ev.date)} className="text-left text-sm text-gray-200">
+                      {ev.date} · {ev.start_time}–{ev.end_time}
+                      {ev.status === 'done' && <span className="text-emerald-400 ml-1">✓</span>}
+                    </button>
+                    <button onClick={() => handleUnlinkSession(ev)} className="text-gray-600 active:text-red-400 text-sm px-1">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <form onSubmit={handleAddSession} className="space-y-2 pt-1">
+              <input
+                type="date" required value={scheduleForm.date}
+                onChange={e => setScheduleForm(f => ({ ...f, date: e.target.value }))}
+                className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="time" required value={scheduleForm.start_time}
+                  onChange={e => setScheduleForm(f => ({ ...f, start_time: e.target.value }))}
+                  className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700"
+                />
+                <input
+                  type="time" required value={scheduleForm.end_time}
+                  onChange={e => setScheduleForm(f => ({ ...f, end_time: e.target.value }))}
+                  className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700"
+                />
+              </div>
+              <button
+                type="submit" disabled={schedSaving}
+                className="w-full bg-indigo-600 text-white font-medium py-2.5 rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {schedSaving ? 'Adding…' : 'Add session'}
+              </button>
+            </form>
+            <button onClick={() => setScheduling(null)} className="w-full text-gray-500 text-xs py-1">Close</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

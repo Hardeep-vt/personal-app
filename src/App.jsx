@@ -1,14 +1,17 @@
 import { useState, useCallback } from 'react'
-import { AuthProvider, useAuth } from './context/AuthContext'
+import { AuthProvider } from './context/AuthContext'
+import { useAuth } from './context/useAuth'
 import FoodTab from './components/food/FoodTab'
 import ExerciseTab from './components/exercise/ExerciseTab'
 import LifeTab from './components/life/LifeTab'
+import CalendarTab from './components/calendar/CalendarTab'
 import usePullToRefresh from './hooks/usePullToRefresh'
 
 const TABS = [
   { id: 'food', label: 'Food', icon: '🥗' },
   { id: 'exercise', label: 'Exercise', icon: '💪' },
   { id: 'life', label: 'Life', icon: '📋' },
+  { id: 'calendar', label: 'Calendar', icon: '📅' },
 ]
 
 function AppInner() {
@@ -16,6 +19,12 @@ function AppInner() {
   const [activeTab, setActiveTab] = useState('food')
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [calendarJumpDate, setCalendarJumpDate] = useState(null)
+
+  const jumpToCalendar = useCallback((date) => {
+    setCalendarJumpDate(date)
+    setActiveTab('calendar')
+  }, [])
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true)
@@ -40,7 +49,7 @@ function AppInner() {
         <div className="text-center">
           <div className="text-5xl mb-4">📋</div>
           <h1 className="text-2xl font-semibold text-white mb-2">MyApp</h1>
-          <p className="text-gray-400 text-sm">Your personal tracker — food, exercise, notes & todos</p>
+          <p className="text-gray-400 text-sm">Your personal tracker — food, exercise, life & calendar</p>
         </div>
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         <button
@@ -60,7 +69,8 @@ function AppInner() {
   const tabContent = {
     food: <FoodTab key={refreshKey} />,
     exercise: <ExerciseTab key={refreshKey} />,
-    life: <LifeTab key={refreshKey} />,
+    life: <LifeTab key={refreshKey} onJumpToCalendar={jumpToCalendar} />,
+    calendar: <CalendarTab key={refreshKey} jumpDate={calendarJumpDate} onJumpHandled={() => setCalendarJumpDate(null)} />,
   }
 
   return (

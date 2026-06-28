@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { getTrash, restoreTrashRow, purgeTrashRow, purgeOldTrash } from '../../services/sheets'
 
 const LABELS = { notes: 'Note', todos: 'Todo', people: 'Person' }
@@ -19,6 +19,7 @@ export default function TrashTab() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState(null)
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run once on mount
   useEffect(() => { load() }, [])
 
   async function load() {

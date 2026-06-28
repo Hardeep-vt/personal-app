@@ -1,23 +1,18 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GOOGLE_CLIENT_ID, SCOPES, SPREADSHEET_NAME, SANDBOX_SPREADSHEET_NAME } from '../config'
-import { getOrCreateSpreadsheet } from '../services/sheets'
-
-const AuthContext = createContext(null)
+import { getOrCreateSpreadsheet, maybeRunDailyBackup } from '../services/sheets'
+import { AuthContext } from './authContextValue'
 
 export function AuthProvider({ children }) {
-  const [status, setStatus] = useState('loading') // loading | unauthenticated | authenticated
+  const hasToken = !!sessionStorage.getItem('gtoken')
+  const [status, setStatus] = useState(hasToken ? 'loading' : 'unauthenticated')
   const [spreadsheetId, setSpreadsheetId] = useState(null)
   const [error, setError] = useState(null)
   const [sandboxMode, setSandboxMode] = useState(localStorage.getItem('sandbox_mode') === 'true')
 
   useEffect(() => {
-    const existing = sessionStorage.getItem('gtoken')
-    if (existing) {
-      initSpreadsheet(sandboxMode)
-    } else {
-      setStatus('unauthenticated')
-    }
-  }, [])
+    if (hasToken) initSpreadsheet(sandboxMode)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentionally run once on mount only
 
   async function initSpreadsheet(useSandbox = sandboxMode) {
     try {
@@ -27,6 +22,7 @@ export function AuthProvider({ children }) {
       const id = await getOrCreateSpreadsheet(name, storageKey)
       setSpreadsheetId(id)
       setStatus('authenticated')
+      if (!useSandbox) maybeRunDailyBackup(id, name)
     } catch (e) {
       setError(e.message)
       setStatus('unauthenticated')
@@ -76,8 +72,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  return useContext(AuthContext)
 }

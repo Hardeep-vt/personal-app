@@ -18,7 +18,8 @@ async function req(url, options = {}) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err?.error?.message || `HTTP ${res.status}`)
   }
-  return res.json()
+  const text = await res.text()
+  return text ? JSON.parse(text) : {}
 }
 
 export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id') {
@@ -53,6 +54,9 @@ export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id'
         { properties: { title: 'interactions' } },
         { properties: { title: 'meal_times' } },
         { properties: { title: 'trash' } },
+        { properties: { title: 'calendar_events' } },
+        { properties: { title: 'recurring_templates' } },
+        { properties: { title: 'habit_completions' } },
       ],
     }),
   })
@@ -65,7 +69,7 @@ export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id'
 async function ensureSheets(spreadsheetId) {
   const meta = await req(`${BASE}/${spreadsheetId}`)
   const existing = meta.sheets.map(s => s.properties.title)
-  const needed = ['people', 'interactions', 'meal_times', 'trash']
+  const needed = ['people', 'interactions', 'meal_times', 'trash', 'calendar_events', 'recurring_templates', 'habit_completions']
   const toCreate = needed.filter(n => !existing.includes(n))
   if (toCreate.length > 0) {
     await req(`${BASE}/${spreadsheetId}:batchUpdate`, {
@@ -77,6 +81,9 @@ async function ensureSheets(spreadsheetId) {
     if (toCreate.includes('people') || toCreate.includes('interactions')) await writePeopleHeaders(spreadsheetId)
     if (toCreate.includes('meal_times')) await writeMealTimesHeaders(spreadsheetId)
     if (toCreate.includes('trash')) await writeTrashHeaders(spreadsheetId)
+    if (toCreate.includes('calendar_events')) await writeCalendarHeaders(spreadsheetId)
+    if (toCreate.includes('recurring_templates')) await writeRecurringTemplateHeaders(spreadsheetId)
+    if (toCreate.includes('habit_completions')) await writeHabitCompletionHeaders(spreadsheetId)
   }
   await ensureFoodMacroHeaders(spreadsheetId)
 }
@@ -85,6 +92,27 @@ async function writeTrashHeaders(spreadsheetId) {
   await req(`${BASE}/${spreadsheetId}/values/trash!A1:E1?valueInputOption=RAW`, {
     method: 'PUT',
     body: JSON.stringify({ values: [['id', 'sheet', 'original_id', 'data', 'deleted_at']] }),
+  })
+}
+
+async function writeCalendarHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/calendar_events!A1:G1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status']] }),
+  })
+}
+
+async function writeRecurringTemplateHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/recurring_templates!A1:G1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active']] }),
+  })
+}
+
+async function writeHabitCompletionHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/habit_completions!A1:C1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['template_id', 'date', 'completed_at']] }),
   })
 }
 
@@ -116,6 +144,9 @@ async function writeHeaders(spreadsheetId) {
     { range: 'interactions!A1', values: [['id', 'person_id', 'date', 'summary', 'created_at']] },
     { range: 'meal_times!A1', values: [['date', 'meal_type', 'time']] },
     { range: 'trash!A1', values: [['id', 'sheet', 'original_id', 'data', 'deleted_at']] },
+    { range: 'calendar_events!A1', values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status']] },
+    { range: 'recurring_templates!A1', values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active']] },
+    { range: 'habit_completions!A1', values: [['template_id', 'date', 'completed_at']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST',
@@ -212,5 +243,126 @@ export async function purgeOldTrash(spreadsheetId, maxAgeDays = 30) {
     .sort((a, b) => b.i - a.i)
   for (const { i } of toDelete) {
     await deleteRow(spreadsheetId, 'trash', i)
+  }
+}
+
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }
+
+// --- calendar_events ---
+
+export async function createCalendarEvent(spreadsheetId, { title, date, start_time, end_time, todo_id = '' }) {
+  const row = [genId(), title, date, start_time, end_time, todo_id, 'pending']
+  await appendRow(spreadsheetId, 'calendar_events', row)
+}
+
+export async function updateCalendarEvent(spreadsheetId, rowIndex, row) {
+  await updateRow(spreadsheetId, 'calendar_events', rowIndex, [row.id, row.title, row.date, row.start_time, row.end_time, row.todo_id || '', row.status || 'pending'])
+}
+
+export async function setCalendarEventStatus(spreadsheetId, rowIndex, row, status) {
+  await updateCalendarEvent(spreadsheetId, rowIndex, { ...row, status })
+}
+
+// --- recurring_templates ---
+
+export async function createRecurringTemplate(spreadsheetId, { title, days_of_week, start_time, end_time, category = '' }) {
+  const row = [genId(), title, days_of_week.join(','), start_time, end_time, category, 'true']
+  await appendRow(spreadsheetId, 'recurring_templates', row)
+}
+
+export async function updateRecurringTemplate(spreadsheetId, rowIndex, row) {
+  const days = Array.isArray(row.days_of_week) ? row.days_of_week.join(',') : row.days_of_week
+  await updateRow(spreadsheetId, 'recurring_templates', rowIndex, [row.id, row.title, days, row.start_time, row.end_time, row.category || '', String(row.active)])
+}
+
+// --- habit_completions ---
+
+export async function markHabitDone(spreadsheetId, templateId, date) {
+  await appendRow(spreadsheetId, 'habit_completions', [templateId, date, new Date().toISOString()])
+}
+
+export async function unmarkHabitDone(spreadsheetId, templateId, date) {
+  const rows = await getRows(spreadsheetId, 'habit_completions')
+  const idx = rows.findIndex(r => r.template_id === templateId && r.date === date)
+  if (idx !== -1) await deleteRow(spreadsheetId, 'habit_completions', idx)
+}
+
+// Expands active recurring_templates into virtual occurrence tiles for each date in [startDate, endDate] (inclusive, 'YYYY-MM-DD' strings).
+// Marks an occurrence done if a matching habit_completions row exists.
+export function expandRecurringOccurrences(templates, completions, startDate, endDate) {
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const occurrences = []
+  const start = new Date(startDate + 'T00:00:00')
+  const end = new Date(endDate + 'T00:00:00')
+
+  for (const tmpl of templates.filter(t => t.active === 'true' || t.active === true)) {
+    const days = (tmpl.days_of_week || '').split(',').map(d => d.trim()).filter(Boolean)
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dayLabel = DOW[d.getDay()]
+      if (!days.includes(dayLabel)) continue
+      const date = d.toISOString().slice(0, 10)
+      const done = completions.some(c => c.template_id === tmpl.id && c.date === date)
+      occurrences.push({
+        templateId: tmpl.id,
+        title: tmpl.title,
+        date,
+        start_time: tmpl.start_time,
+        end_time: tmpl.end_time,
+        category: tmpl.category,
+        done,
+      })
+    }
+  }
+  return occurrences
+}
+
+// --- Drive backups ---
+
+const DRIVE_BASE = 'https://www.googleapis.com/drive/v3/files'
+const BACKUP_FOLDER_NAME = 'personal-app-backups'
+const BACKUP_KEEP = 14
+
+async function getOrCreateBackupFolder() {
+  const q = `name='${BACKUP_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
+  const search = await req(`${DRIVE_BASE}?q=${encodeURIComponent(q)}`)
+  if (search.files?.length > 0) return search.files[0].id
+  const created = await req(DRIVE_BASE, {
+    method: 'POST',
+    body: JSON.stringify({ name: BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
+  })
+  return created.id
+}
+
+async function pruneOldBackups(folderId) {
+  const q = `'${folderId}' in parents and trashed=false`
+  const list = await req(`${DRIVE_BASE}?q=${encodeURIComponent(q)}&orderBy=createdTime&fields=files(id,createdTime)`)
+  const files = list.files || []
+  const toDelete = files.slice(0, Math.max(0, files.length - BACKUP_KEEP))
+  for (const f of toDelete) {
+    await req(`${DRIVE_BASE}/${f.id}`, { method: 'DELETE' })
+  }
+}
+
+// Copies the spreadsheet into a Drive backups folder and prunes old copies beyond BACKUP_KEEP.
+export async function backupSpreadsheet(spreadsheetId, spreadsheetName) {
+  const folderId = await getOrCreateBackupFolder()
+  const stamp = new Date().toISOString().slice(0, 10)
+  await req(`${DRIVE_BASE}/${spreadsheetId}/copy`, {
+    method: 'POST',
+    body: JSON.stringify({ name: `${spreadsheetName} backup ${stamp}`, parents: [folderId] }),
+  })
+  await pruneOldBackups(folderId)
+}
+
+// Runs backupSpreadsheet at most once per calendar day per spreadsheet, tracked in localStorage.
+export async function maybeRunDailyBackup(spreadsheetId, spreadsheetName) {
+  const key = `last_backup_${spreadsheetId}`
+  const today = new Date().toISOString().slice(0, 10)
+  if (localStorage.getItem(key) === today) return
+  try {
+    await backupSpreadsheet(spreadsheetId, spreadsheetName)
+    localStorage.setItem(key, today)
+  } catch (e) {
+    console.error('Daily backup failed', e)
   }
 }

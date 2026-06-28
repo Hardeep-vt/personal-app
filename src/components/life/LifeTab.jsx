@@ -11,11 +11,11 @@ const SUB_TABS = [
   { id: 'trash', label: 'Trash' },
 ]
 
-export default function LifeTab() {
+export default function LifeTab({ onJumpToCalendar }) {
   const [activeSubTab, setActiveSubTab] = useState('todos')
 
   const subTabContent = {
-    todos: <TodosTab />,
+    todos: <TodosTab onJumpToCalendar={onJumpToCalendar} />,
     notes: <NotesTab />,
     people: <PeopleTab />,
     trash: <TrashTab />,

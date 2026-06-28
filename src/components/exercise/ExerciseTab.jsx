@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { getRows, appendRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
@@ -22,6 +22,7 @@ export default function ExerciseTab() {
   const [saving, setSaving] = useState(false)
   const [selectedDate, setSelectedDate] = useState(today())
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run once on mount
   useEffect(() => { load() }, [])
 
   async function load() {

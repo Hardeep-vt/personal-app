@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { getRows, appendRow, updateRow, deleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import indianFoods from '../../data/indianFoods'
@@ -252,7 +252,7 @@ export default function FoodTab() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentionally run once on mount
 
   async function load() {
     setLoading(true)

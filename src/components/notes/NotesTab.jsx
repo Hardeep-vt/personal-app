@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { getRows, appendRow, updateRow, softDeleteRow } from '../../services/sheets'
 import { SHEETS } from '../../config'
 
@@ -15,6 +15,7 @@ export default function NotesTab() {
   const [filterTag, setFilterTag] = useState('')
   const [search, setSearch] = useState('')
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run once on mount
   useEffect(() => { load() }, [])
 
   async function load() {
@@ -73,7 +74,6 @@ export default function NotesTab() {
   })
 
   if (editing !== null) {
-    const isNew = editing.id === 'new'
     return (
       <div className="flex flex-col h-full px-4 py-4 min-h-[calc(100svh-120px)]">
         <div className="flex items-center justify-between mb-3">
