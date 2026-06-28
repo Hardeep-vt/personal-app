@@ -86,6 +86,8 @@ async function ensureSheets(spreadsheetId) {
     if (toCreate.includes('habit_completions')) await writeHabitCompletionHeaders(spreadsheetId)
   }
   await ensureFoodMacroHeaders(spreadsheetId)
+  await ensureCalendarEventHeaders(spreadsheetId)
+  await ensureRecurringTemplateHeaders(spreadsheetId)
 }
 
 async function writeTrashHeaders(spreadsheetId) {
@@ -96,16 +98,40 @@ async function writeTrashHeaders(spreadsheetId) {
 }
 
 async function writeCalendarHeaders(spreadsheetId) {
-  await req(`${BASE}/${spreadsheetId}/values/calendar_events!A1:G1?valueInputOption=RAW`, {
+  await req(`${BASE}/${spreadsheetId}/values/calendar_events!A1:I1?valueInputOption=RAW`, {
     method: 'PUT',
-    body: JSON.stringify({ values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status']] }),
+    body: JSON.stringify({ values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status', 'category', 'description']] }),
   })
 }
 
 async function writeRecurringTemplateHeaders(spreadsheetId) {
-  await req(`${BASE}/${spreadsheetId}/values/recurring_templates!A1:G1?valueInputOption=RAW`, {
+  await req(`${BASE}/${spreadsheetId}/values/recurring_templates!A1:H1?valueInputOption=RAW`, {
     method: 'PUT',
-    body: JSON.stringify({ values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active']] }),
+    body: JSON.stringify({ values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active', 'description']] }),
+  })
+}
+
+// Backfills the description/category columns for calendar_events sheets created before they existed.
+async function ensureCalendarEventHeaders(spreadsheetId) {
+  const data = await req(`${BASE}/${spreadsheetId}/values/calendar_events!1:1`)
+  const headers = data.values?.[0] || []
+  if (headers.includes('description') && headers.includes('category')) return
+  const newHeaders = ['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status', 'category', 'description']
+  await req(`${BASE}/${spreadsheetId}/values/calendar_events!A1:I1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [newHeaders] }),
+  })
+}
+
+// Backfills the description column for recurring_templates sheets created before it existed.
+async function ensureRecurringTemplateHeaders(spreadsheetId) {
+  const data = await req(`${BASE}/${spreadsheetId}/values/recurring_templates!1:1`)
+  const headers = data.values?.[0] || []
+  if (headers.includes('description')) return
+  const newHeaders = ['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active', 'description']
+  await req(`${BASE}/${spreadsheetId}/values/recurring_templates!A1:H1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [newHeaders] }),
   })
 }
 
@@ -144,8 +170,8 @@ async function writeHeaders(spreadsheetId) {
     { range: 'interactions!A1', values: [['id', 'person_id', 'date', 'summary', 'created_at']] },
     { range: 'meal_times!A1', values: [['date', 'meal_type', 'time']] },
     { range: 'trash!A1', values: [['id', 'sheet', 'original_id', 'data', 'deleted_at']] },
-    { range: 'calendar_events!A1', values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status']] },
-    { range: 'recurring_templates!A1', values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active']] },
+    { range: 'calendar_events!A1', values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status', 'category', 'description']] },
+    { range: 'recurring_templates!A1', values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active', 'description']] },
     { range: 'habit_completions!A1', values: [['template_id', 'date', 'completed_at']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
@@ -250,13 +276,15 @@ function genId() { return Date.now().toString(36) + Math.random().toString(36).s
 
 // --- calendar_events ---
 
-export async function createCalendarEvent(spreadsheetId, { title, date, start_time, end_time, todo_id = '' }) {
-  const row = [genId(), title, date, start_time, end_time, todo_id, 'pending']
+export async function createCalendarEvent(spreadsheetId, { title, date, start_time, end_time, todo_id = '', category = '', description = '' }) {
+  const row = [genId(), title, date, start_time, end_time, todo_id, 'pending', category, description]
   await appendRow(spreadsheetId, 'calendar_events', row)
 }
 
 export async function updateCalendarEvent(spreadsheetId, rowIndex, row) {
-  await updateRow(spreadsheetId, 'calendar_events', rowIndex, [row.id, row.title, row.date, row.start_time, row.end_time, row.todo_id || '', row.status || 'pending'])
+  await updateRow(spreadsheetId, 'calendar_events', rowIndex, [
+    row.id, row.title, row.date, row.start_time, row.end_time, row.todo_id || '', row.status || 'pending', row.category || '', row.description || '',
+  ])
 }
 
 export async function setCalendarEventStatus(spreadsheetId, rowIndex, row, status) {
@@ -265,14 +293,16 @@ export async function setCalendarEventStatus(spreadsheetId, rowIndex, row, statu
 
 // --- recurring_templates ---
 
-export async function createRecurringTemplate(spreadsheetId, { title, days_of_week, start_time, end_time, category = '' }) {
-  const row = [genId(), title, days_of_week.join(','), start_time, end_time, category, 'true']
+export async function createRecurringTemplate(spreadsheetId, { title, days_of_week, start_time, end_time, category = '', description = '' }) {
+  const row = [genId(), title, days_of_week.join(','), start_time, end_time, category, 'true', description]
   await appendRow(spreadsheetId, 'recurring_templates', row)
 }
 
 export async function updateRecurringTemplate(spreadsheetId, rowIndex, row) {
   const days = Array.isArray(row.days_of_week) ? row.days_of_week.join(',') : row.days_of_week
-  await updateRow(spreadsheetId, 'recurring_templates', rowIndex, [row.id, row.title, days, row.start_time, row.end_time, row.category || '', String(row.active)])
+  await updateRow(spreadsheetId, 'recurring_templates', rowIndex, [
+    row.id, row.title, days, row.start_time, row.end_time, row.category || '', String(row.active), row.description || '',
+  ])
 }
 
 // --- habit_completions ---
@@ -309,6 +339,7 @@ export function expandRecurringOccurrences(templates, completions, startDate, en
         start_time: tmpl.start_time,
         end_time: tmpl.end_time,
         category: tmpl.category,
+        description: tmpl.description,
         done,
       })
     }

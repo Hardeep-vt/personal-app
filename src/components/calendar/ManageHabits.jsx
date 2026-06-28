@@ -1,15 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/useAuth'
 import { getRows, createRecurringTemplate, updateRecurringTemplate, softDeleteRow } from '../../services/sheets'
 import { SHEETS, DAYS_OF_WEEK } from '../../config'
+import { CATEGORIES, CATEGORY_DOT } from './categories'
 
-const EMPTY_FORM = { title: '', days_of_week: [], start_time: '07:00', end_time: '08:00', category: '' }
+const EMPTY_FORM = { title: '', days_of_week: [], start_time: '07:00', end_time: '08:00', category: '', description: '' }
 
-export default function ManageHabits({ templates, onClose, onChanged }) {
+export default function ManageHabits({ templates, onClose, onChanged, initialEditTemplateId }) {
   const { spreadsheetId } = useAuth()
   const [editing, setEditing] = useState(null) // null | 'new' | template row
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const appliedInitialId = useRef(null)
+
+  useEffect(() => {
+    if (initialEditTemplateId && initialEditTemplateId !== appliedInitialId.current) {
+      const tmpl = templates.find(t => t.id === initialEditTemplateId)
+      if (tmpl) {
+        appliedInitialId.current = initialEditTemplateId
+        startEdit(tmpl)
+      }
+    }
+  }, [initialEditTemplateId, templates])
 
   function startNew() {
     setForm(EMPTY_FORM)
@@ -23,6 +35,7 @@ export default function ManageHabits({ templates, onClose, onChanged }) {
       start_time: tmpl.start_time,
       end_time: tmpl.end_time,
       category: tmpl.category || '',
+      description: tmpl.description || '',
     })
     setEditing(tmpl)
   }
@@ -118,10 +131,26 @@ export default function ManageHabits({ templates, onClose, onChanged }) {
               />
             </div>
           </div>
-          <input
-            placeholder="Category (optional, e.g. Health, Work)"
-            value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-            className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-emerald-500"
+          <div>
+            <p className="text-gray-500 text-xs mb-1.5">Category</p>
+            <div className="flex gap-2">
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat} type="button"
+                  onClick={() => setForm(f => ({ ...f, category: f.category === cat ? '' : cat }))}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${form.category === cat ? 'bg-gray-700 text-white ring-1 ring-white/30' : 'bg-gray-800 text-gray-400'}`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${CATEGORY_DOT[cat]}`} />
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+          <textarea
+            placeholder="Description (optional)"
+            value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            rows={3}
+            className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-emerald-500 resize-none"
           />
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={() => setEditing(null)} className="flex-1 bg-gray-800 text-gray-300 py-2.5 rounded-xl text-sm font-medium">
@@ -142,10 +171,14 @@ export default function ManageHabits({ templates, onClose, onChanged }) {
                 <div key={t.id} className={`bg-gray-800 rounded-xl px-4 py-3 ${t.active === 'false' ? 'opacity-50' : ''}`}>
                   <div className="flex items-start justify-between gap-2">
                     <button onClick={() => startEdit(t)} className="text-left flex-1 min-w-0">
-                      <div className="text-white text-sm font-medium">{t.title}</div>
+                      <div className="flex items-center gap-1.5">
+                        {t.category && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CATEGORY_DOT[t.category] || 'bg-gray-500'}`} />}
+                        <span className="text-white text-sm font-medium">{t.title}</span>
+                      </div>
                       <div className="text-gray-500 text-xs mt-0.5">
                         {t.days_of_week} · {t.start_time}–{t.end_time}{t.category ? ` · ${t.category}` : ''}
                       </div>
+                      {t.description && <div className="text-gray-600 text-xs mt-0.5 line-clamp-1">{t.description}</div>}
                     </button>
                     <div className="flex items-center gap-2 shrink-0">
                       <button onClick={() => toggleActive(t)} className="text-gray-400 text-xs active:text-white">

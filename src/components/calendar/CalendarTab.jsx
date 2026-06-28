@@ -6,10 +6,12 @@ import {
 } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import ManageHabits from './ManageHabits'
+import { CATEGORIES, CATEGORY_DOT, tileColorFor } from './categories'
 import { todayStr, addDays, weekDates, timeToMinutes, formatTimeLabel, formatTimeRange, formatDayLabel, layoutTiles } from './dateUtils'
 
 const HOUR_HEIGHT = 60
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
+const EMPTY_EVENT_FORM = { title: '', start_time: '09:00', end_time: '10:00', category: '', description: '' }
 
 export default function CalendarTab({ jumpDate, onJumpHandled }) {
   const { spreadsheetId } = useAuth()
@@ -19,9 +21,11 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
   const [completions, setCompletions] = useState([])
   const [loading, setLoading] = useState(true)
   const [showManage, setShowManage] = useState(false)
+  const [manageInitialId, setManageInitialId] = useState(null)
   const [formOpen, setFormOpen] = useState(null) // null | 'new' | event row
-  const [form, setForm] = useState({ title: '', start_time: '09:00', end_time: '10:00' })
+  const [form, setForm] = useState(EMPTY_EVENT_FORM)
   const [saving, setSaving] = useState(false)
+  const [habitDetail, setHabitDetail] = useState(null) // occurrence object being viewed
   const [appliedJumpDate, setAppliedJumpDate] = useState(null)
   const scrollRef = useRef(null)
 
@@ -65,22 +69,23 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
   const tiles = layoutTiles([
     ...dayOccurrences.map(occ => ({
       key: `${occ.templateId}-${occ.date}`, title: occ.title, start_time: occ.start_time, end_time: occ.end_time,
-      done: occ.done, variant: 'habit', onToggleDone: () => toggleOccurrenceDone(occ),
+      done: occ.done, category: occ.category, isHabit: true,
+      onToggleDone: () => toggleOccurrenceDone(occ), onClick: () => setHabitDetail(occ),
     })),
     ...dayEvents.map(ev => ({
       key: ev.id, title: ev.title, start_time: ev.start_time, end_time: ev.end_time,
-      done: ev.status === 'done', variant: ev.todo_id ? 'todo' : 'event',
+      done: ev.status === 'done', category: ev.category, isHabit: false,
       onToggleDone: () => toggleEventDone(ev), onClick: () => openEditForm(ev),
     })),
   ])
 
   function openNewForm() {
-    setForm({ title: '', start_time: '09:00', end_time: '10:00' })
+    setForm(EMPTY_EVENT_FORM)
     setFormOpen('new')
   }
 
   function openEditForm(ev) {
-    setForm({ title: ev.title, start_time: ev.start_time, end_time: ev.end_time })
+    setForm({ title: ev.title, start_time: ev.start_time, end_time: ev.end_time, category: ev.category || '', description: ev.description || '' })
     setFormOpen(ev)
   }
 
@@ -130,6 +135,12 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
     } catch (e) { console.error(e) }
   }
 
+  function openManageFromHabitDetail() {
+    setManageInitialId(habitDetail.templateId)
+    setHabitDetail(null)
+    setShowManage(true)
+  }
+
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
@@ -140,7 +151,7 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setSelectedDate(todayStr())} className="text-indigo-400 text-xs font-medium">Today</button>
-          <button onClick={() => setShowManage(true)} className="text-gray-400 text-xs">⚙ Habits</button>
+          <button onClick={() => { setManageInitialId(null); setShowManage(true) }} className="text-gray-400 text-xs">⚙ Habits</button>
         </div>
       </div>
 
@@ -179,7 +190,7 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
                   start={t.start_time}
                   end={t.end_time}
                   done={t.done}
-                  variant={t.variant}
+                  category={t.category}
                   onToggleDone={t.onToggleDone}
                   onClick={t.onClick}
                   col={t._col}
@@ -200,7 +211,7 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
 
       {formOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-end z-50" onClick={() => setFormOpen(null)}>
-          <form onSubmit={handleSaveForm} onClick={e => e.stopPropagation()} className="bg-gray-900 w-full rounded-t-2xl p-5 space-y-3">
+          <form onSubmit={handleSaveForm} onClick={e => e.stopPropagation()} className="bg-gray-900 w-full rounded-t-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto">
             <h2 className="text-white font-semibold text-base mb-1">{formOpen === 'new' ? 'New Event' : 'Edit Event'}</h2>
             <input
               required placeholder="Title"
@@ -219,6 +230,27 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
                   className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700" />
               </div>
             </div>
+            <div>
+              <p className="text-gray-500 text-xs mb-1.5">Category</p>
+              <div className="flex gap-2">
+                {CATEGORIES.map(cat => (
+                  <button
+                    key={cat} type="button"
+                    onClick={() => setForm(f => ({ ...f, category: f.category === cat ? '' : cat }))}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${form.category === cat ? 'bg-gray-700 text-white ring-1 ring-white/30' : 'bg-gray-800 text-gray-400'}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${CATEGORY_DOT[cat]}`} />
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <textarea
+              placeholder="Description (optional)"
+              value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              rows={3}
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2.5 text-sm border border-gray-700 outline-none focus:border-indigo-500 resize-none"
+            />
             {formOpen !== 'new' && formOpen.todo_id && (
               <p className="text-gray-500 text-xs">Linked to a todo — manage the link from the Todos tab.</p>
             )}
@@ -236,41 +268,75 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
         </div>
       )}
 
+      {habitDetail && (
+        <div className="fixed inset-0 bg-black/70 flex items-end z-50" onClick={() => setHabitDetail(null)}>
+          <div onClick={e => e.stopPropagation()} className="bg-gray-900 w-full rounded-t-2xl p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              {habitDetail.category && <span className={`w-2 h-2 rounded-full ${CATEGORY_DOT[habitDetail.category] || 'bg-gray-500'}`} />}
+              <h2 className="text-white font-semibold text-base">{habitDetail.title}</h2>
+            </div>
+            <p className="text-gray-400 text-sm">
+              {formatTimeRange(habitDetail.start_time, habitDetail.end_time)}
+              {habitDetail.category ? ` · ${habitDetail.category}` : ''}
+              {habitDetail.done ? ' · Done ✓' : ''}
+            </p>
+            {habitDetail.description && <p className="text-gray-300 text-sm leading-relaxed">{habitDetail.description}</p>}
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setHabitDetail(null)} className="flex-1 bg-gray-800 text-gray-300 py-2.5 rounded-xl text-sm font-medium">
+                Close
+              </button>
+              <button onClick={openManageFromHabitDetail} className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-medium">
+                Edit habit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showManage && (
-        <ManageHabits templates={templates} onClose={() => setShowManage(false)} onChanged={load} />
+        <ManageHabits templates={templates} initialEditTemplateId={manageInitialId} onClose={() => setShowManage(false)} onChanged={load} />
       )}
     </div>
   )
 }
 
-function Tile({ title, start, end, done, variant, onToggleDone, onClick, col = 0, cols = 1 }) {
+function Tile({ title, start, end, done, category, onToggleDone, onClick, col = 0, cols = 1 }) {
   const top = timeToMinutes(start)
-  const height = Math.max(timeToMinutes(end) - timeToMinutes(start), 28)
+  const height = Math.max(timeToMinutes(end) - timeToMinutes(start), 16)
+  const compact = height < 34
   const widthPct = 100 / cols
-  const colors = done
-    ? 'bg-emerald-600/80 text-white'
-    : variant === 'habit'
-      ? 'bg-gray-700/70 text-gray-300'
-      : variant === 'todo'
-        ? 'bg-sky-600/80 text-white'
-        : 'bg-indigo-600/80 text-white'
+  const colors = tileColorFor(category)
 
   return (
     <div
       onClick={onClick}
-      className={`absolute rounded-lg px-2 py-1 overflow-hidden flex items-start justify-between gap-1 ${colors} ${onClick ? 'cursor-pointer' : ''}`}
+      className={`absolute rounded-lg overflow-hidden flex ${compact ? 'items-center px-1.5 py-0' : 'items-start justify-between gap-1 px-2 py-1'} ${colors} ${done ? 'opacity-55' : ''} ${onClick ? 'cursor-pointer' : ''}`}
       style={{ top, height, left: `${col * widthPct}%`, width: `calc(${widthPct}% - 4px)` }}
     >
-      <div className="min-w-0">
-        <div className="text-xs font-medium truncate leading-tight">{title}</div>
-        <div className="text-[10px] opacity-80 leading-tight">{formatTimeRange(start, end)}</div>
-      </div>
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleDone() }}
-        className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${done ? 'bg-white/20 border-white' : 'border-white/50'}`}
-      >
-        {done ? '✓' : ''}
-      </button>
+      {compact ? (
+        <div className="flex items-center justify-between gap-1 w-full">
+          <span className={`text-[10px] font-medium truncate ${done ? 'line-through' : ''}`}>{title}</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleDone() }}
+            className={`shrink-0 w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] ${done ? 'bg-white/30 border-white' : 'border-white/50'}`}
+          >
+            {done ? '✓' : ''}
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="min-w-0">
+            <div className={`text-xs font-medium truncate leading-tight ${done ? 'line-through' : ''}`}>{title}</div>
+            <div className="text-[10px] opacity-80 leading-tight truncate">{formatTimeRange(start, end)}</div>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleDone() }}
+            className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${done ? 'bg-white/20 border-white' : 'border-white/50'}`}
+          >
+            {done ? '✓' : ''}
+          </button>
+        </>
+      )}
     </div>
   )
 }
