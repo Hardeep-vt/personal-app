@@ -1,17 +1,20 @@
 export const CATEGORIES = ['Work', 'Personal', 'Play']
 
-// Tile background, used regardless of done state — done is indicated separately (checkmark + dim).
+// Tile background for not-yet-done tiles. Done tiles override to green (see DONE_COLOR below),
+// so Play uses a different color to stay distinguishable from "done".
 export const CATEGORY_COLORS = {
   Work: 'bg-blue-600/80 text-white',
   Personal: 'bg-purple-600/80 text-white',
-  Play: 'bg-green-600/80 text-white',
+  Play: 'bg-orange-600/80 text-white',
 }
 
 export const CATEGORY_DOT = {
   Work: 'bg-blue-500',
   Personal: 'bg-purple-500',
-  Play: 'bg-green-500',
+  Play: 'bg-orange-500',
 }
+
+export const DONE_COLOR = 'bg-emerald-600/80 text-white'
 
 export const DEFAULT_TILE_COLOR = 'bg-gray-700/80 text-gray-200'
 

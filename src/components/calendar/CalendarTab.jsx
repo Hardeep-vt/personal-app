@@ -6,7 +6,7 @@ import {
 } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import ManageHabits from './ManageHabits'
-import { CATEGORIES, CATEGORY_DOT, tileColorFor } from './categories'
+import { CATEGORIES, CATEGORY_DOT, tileColorFor, DONE_COLOR } from './categories'
 import { todayStr, addDays, weekDates, timeToMinutes, formatTimeLabel, formatTimeRange, formatDayLabel, layoutTiles } from './dateUtils'
 
 const HOUR_HEIGHT = 60
@@ -305,17 +305,17 @@ function Tile({ title, start, end, done, category, onToggleDone, onClick, col = 
   const height = Math.max(timeToMinutes(end) - timeToMinutes(start), 16)
   const compact = height < 34
   const widthPct = 100 / cols
-  const colors = tileColorFor(category)
+  const colors = done ? DONE_COLOR : tileColorFor(category)
 
   return (
     <div
       onClick={onClick}
-      className={`absolute rounded-lg overflow-hidden flex ${compact ? 'items-center px-1.5 py-0' : 'items-start justify-between gap-1 px-2 py-1'} ${colors} ${done ? 'opacity-55' : ''} ${onClick ? 'cursor-pointer' : ''}`}
+      className={`absolute rounded-lg overflow-hidden flex ${compact ? 'items-center px-1.5 py-0' : 'items-start justify-between gap-1 px-2 py-1'} ${colors} ${onClick ? 'cursor-pointer' : ''}`}
       style={{ top, height, left: `${col * widthPct}%`, width: `calc(${widthPct}% - 4px)` }}
     >
       {compact ? (
         <div className="flex items-center justify-between gap-1 w-full">
-          <span className={`text-[10px] font-medium truncate ${done ? 'line-through' : ''}`}>{title}</span>
+          <span className="text-[10px] font-medium truncate">{title}</span>
           <button
             onClick={(e) => { e.stopPropagation(); onToggleDone() }}
             className={`shrink-0 w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] ${done ? 'bg-white/30 border-white' : 'border-white/50'}`}
@@ -326,7 +326,7 @@ function Tile({ title, start, end, done, category, onToggleDone, onClick, col = 
       ) : (
         <>
           <div className="min-w-0">
-            <div className={`text-xs font-medium truncate leading-tight ${done ? 'line-through' : ''}`}>{title}</div>
+            <div className="text-xs font-medium truncate leading-tight">{title}</div>
             <div className="text-[10px] opacity-80 leading-tight truncate">{formatTimeRange(start, end)}</div>
           </div>
           <button
