@@ -8,15 +8,15 @@ import CalendarTab from './components/calendar/CalendarTab'
 import usePullToRefresh from './hooks/usePullToRefresh'
 
 const TABS = [
+  { id: 'calendar', label: 'Calendar', icon: '📅' },
   { id: 'food', label: 'Food', icon: '🥗' },
   { id: 'exercise', label: 'Exercise', icon: '💪' },
   { id: 'life', label: 'Life', icon: '📋' },
-  { id: 'calendar', label: 'Calendar', icon: '📅' },
 ]
 
 function AppInner() {
   const { status, signIn, signOut, error, sandboxMode, toggleSandbox } = useAuth()
-  const [activeTab, setActiveTab] = useState('food')
+  const [activeTab, setActiveTab] = useState('calendar')
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const [calendarJumpDate, setCalendarJumpDate] = useState(null)
