@@ -2,11 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/useAuth'
 import {
   getRows, createCalendarEvent, updateCalendarEvent, softDeleteRow,
-  setCalendarEventStatus, markHabitDone, unmarkHabitDone, expandRecurringOccurrences,
+  setCalendarEventStatus, setHabitStatus, expandRecurringOccurrences,
 } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import ManageHabits from './ManageHabits'
-import { CATEGORIES, CATEGORY_DOT, tileColorFor, DONE_COLOR } from './categories'
+import { CATEGORIES, CATEGORY_DOT, colorForStatus } from './categories'
 import { todayStr, addDays, weekDates, timeToMinutes, formatTimeLabel, formatTimeRange, formatDayLabel, layoutTiles } from './dateUtils'
 
 const HOUR_HEIGHT = 60
@@ -69,13 +69,13 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
   const tiles = layoutTiles([
     ...dayOccurrences.map(occ => ({
       key: `${occ.templateId}-${occ.date}`, title: occ.title, start_time: occ.start_time, end_time: occ.end_time,
-      done: occ.done, category: occ.category, isHabit: true,
-      onToggleDone: () => toggleOccurrenceDone(occ), onClick: () => setHabitDetail(occ),
+      status: occ.status, category: occ.category, isHabit: true,
+      onSetStatus: (status) => setOccurrenceStatus(occ, status), onClick: () => setHabitDetail(occ),
     })),
     ...dayEvents.map(ev => ({
       key: ev.id, title: ev.title, start_time: ev.start_time, end_time: ev.end_time,
-      done: ev.status === 'done', category: ev.category, isHabit: false,
-      onToggleDone: () => toggleEventDone(ev), onClick: () => openEditForm(ev),
+      status: ev.status || 'pending', category: ev.category, isHabit: false,
+      onSetStatus: (status) => setEventStatus(ev, status), onClick: () => openEditForm(ev),
     })),
   ])
 
@@ -118,19 +118,25 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
     } catch (e) { console.error(e) }
   }
 
-  async function toggleEventDone(ev) {
+  async function handleSetFormStatus(status) {
+    if (!formOpen || formOpen === 'new') return
+    await setEventStatus(formOpen, status)
+    setFormOpen(null)
+  }
+
+  async function setEventStatus(ev, status) {
     try {
       const all = await getRows(spreadsheetId, SHEETS.CALENDAR_EVENTS)
       const idx = all.findIndex(r => r.id === ev.id)
-      if (idx !== -1) await setCalendarEventStatus(spreadsheetId, idx, all[idx], ev.status === 'done' ? 'pending' : 'done')
+      const current = ev.status || 'pending'
+      if (idx !== -1) await setCalendarEventStatus(spreadsheetId, idx, all[idx], current === status ? 'pending' : status)
       await load()
     } catch (e) { console.error(e) }
   }
 
-  async function toggleOccurrenceDone(occ) {
+  async function setOccurrenceStatus(occ, status) {
     try {
-      if (occ.done) await unmarkHabitDone(spreadsheetId, occ.templateId, occ.date)
-      else await markHabitDone(spreadsheetId, occ.templateId, occ.date)
+      await setHabitStatus(spreadsheetId, occ.templateId, occ.date, occ.status === status ? 'pending' : status)
       await load()
     } catch (e) { console.error(e) }
   }
@@ -175,7 +181,7 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
           <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
-        <div ref={scrollRef} className="overflow-y-auto px-4" style={{ maxHeight: 'calc(100svh - 280px)' }}>
+        <div ref={scrollRef} className="overflow-y-auto overscroll-contain px-4" style={{ maxHeight: 'calc(100svh - 280px)' }}>
           <div className="relative" style={{ height: 24 * HOUR_HEIGHT }}>
             {HOURS.map(h => (
               <div key={h} className="absolute left-0 right-0 border-t border-gray-800 text-gray-600 text-[10px]" style={{ top: h * HOUR_HEIGHT }}>
@@ -189,9 +195,9 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
                   title={t.title}
                   start={t.start_time}
                   end={t.end_time}
-                  done={t.done}
+                  status={t.status}
                   category={t.category}
-                  onToggleDone={t.onToggleDone}
+                  onSetStatus={t.onSetStatus}
                   onClick={t.onClick}
                   col={t._col}
                   cols={t._cols}
@@ -254,6 +260,25 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
             {formOpen !== 'new' && formOpen.todo_id && (
               <p className="text-gray-500 text-xs">Linked to a todo — manage the link from the Todos tab.</p>
             )}
+            {formOpen !== 'new' && (
+              <div>
+                <p className="text-gray-500 text-xs mb-1.5">Status</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button" onClick={() => handleSetFormStatus('done')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${(formOpen.status || 'pending') === 'done' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                  >
+                    ✓ Complete
+                  </button>
+                  <button
+                    type="button" onClick={() => handleSetFormStatus('not_done')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${formOpen.status === 'not_done' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                  >
+                    ✕ Not complete
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2 pt-1">
               {formOpen !== 'new' && (
                 <button type="button" onClick={handleDeleteEvent} className="px-4 bg-gray-800 text-red-400 rounded-xl text-sm font-medium">
@@ -278,9 +303,24 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
             <p className="text-gray-400 text-sm">
               {formatTimeRange(habitDetail.start_time, habitDetail.end_time)}
               {habitDetail.category ? ` · ${habitDetail.category}` : ''}
-              {habitDetail.done ? ' · Done ✓' : ''}
+              {habitDetail.status === 'done' ? ' · Done ✓' : ''}
+              {habitDetail.status === 'not_done' ? ' · Not done ✕' : ''}
             </p>
             {habitDetail.description && <p className="text-gray-300 text-sm leading-relaxed">{habitDetail.description}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setOccurrenceStatus(habitDetail, 'done'); setHabitDetail(null) }}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${habitDetail.status === 'done' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+              >
+                ✓ Complete
+              </button>
+              <button
+                onClick={() => { setOccurrenceStatus(habitDetail, 'not_done'); setHabitDetail(null) }}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${habitDetail.status === 'not_done' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+              >
+                ✕ Not complete
+              </button>
+            </div>
             <div className="flex gap-2 pt-1">
               <button onClick={() => setHabitDetail(null)} className="flex-1 bg-gray-800 text-gray-300 py-2.5 rounded-xl text-sm font-medium">
                 Close
@@ -300,12 +340,30 @@ export default function CalendarTab({ jumpDate, onJumpHandled }) {
   )
 }
 
-function Tile({ title, start, end, done, category, onToggleDone, onClick, col = 0, cols = 1 }) {
+function Tile({ title, start, end, status, category, onSetStatus, onClick, col = 0, cols = 1 }) {
   const top = timeToMinutes(start)
   const height = Math.max(timeToMinutes(end) - timeToMinutes(start), 16)
   const compact = height < 34
   const widthPct = 100 / cols
-  const colors = done ? DONE_COLOR : tileColorFor(category)
+  const colors = colorForStatus(status, category)
+  const btnSize = compact ? 'w-3.5 h-3.5 text-[8px]' : 'w-5 h-5 text-[10px]'
+
+  const statusButtons = (
+    <div className="flex items-center gap-1 shrink-0">
+      <button
+        onClick={(e) => { e.stopPropagation(); onSetStatus('done') }}
+        className={`${btnSize} rounded-full border flex items-center justify-center ${status === 'done' ? 'bg-white/30 border-white' : 'border-white/50'}`}
+      >
+        ✓
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onSetStatus('not_done') }}
+        className={`${btnSize} rounded-full border flex items-center justify-center ${status === 'not_done' ? 'bg-white/30 border-white' : 'border-white/50'}`}
+      >
+        ✕
+      </button>
+    </div>
+  )
 
   return (
     <div
@@ -316,12 +374,7 @@ function Tile({ title, start, end, done, category, onToggleDone, onClick, col = 
       {compact ? (
         <div className="flex items-center justify-between gap-1 w-full">
           <span className="text-[10px] font-medium truncate">{title}</span>
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleDone() }}
-            className={`shrink-0 w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[8px] ${done ? 'bg-white/30 border-white' : 'border-white/50'}`}
-          >
-            {done ? '✓' : ''}
-          </button>
+          {statusButtons}
         </div>
       ) : (
         <>
@@ -329,12 +382,7 @@ function Tile({ title, start, end, done, category, onToggleDone, onClick, col = 
             <div className="text-xs font-medium truncate leading-tight">{title}</div>
             <div className="text-[10px] opacity-80 leading-tight truncate">{formatTimeRange(start, end)}</div>
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleDone() }}
-            className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${done ? 'bg-white/20 border-white' : 'border-white/50'}`}
-          >
-            {done ? '✓' : ''}
-          </button>
+          {statusButtons}
         </>
       )}
     </div>

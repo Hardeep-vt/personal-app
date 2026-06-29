@@ -113,7 +113,7 @@ function AppInner() {
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto pb-24">
+      <main className="flex-1 overflow-y-auto overscroll-contain pb-24">
         {tabContent[activeTab]}
       </main>
 

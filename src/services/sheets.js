@@ -88,6 +88,7 @@ async function ensureSheets(spreadsheetId) {
   await ensureFoodMacroHeaders(spreadsheetId)
   await ensureCalendarEventHeaders(spreadsheetId)
   await ensureRecurringTemplateHeaders(spreadsheetId)
+  await ensureHabitCompletionHeaders(spreadsheetId)
 }
 
 async function writeTrashHeaders(spreadsheetId) {
@@ -136,9 +137,25 @@ async function ensureRecurringTemplateHeaders(spreadsheetId) {
 }
 
 async function writeHabitCompletionHeaders(spreadsheetId) {
-  await req(`${BASE}/${spreadsheetId}/values/habit_completions!A1:C1?valueInputOption=RAW`, {
+  await req(`${BASE}/${spreadsheetId}/values/habit_completions!A1:D1?valueInputOption=RAW`, {
     method: 'PUT',
-    body: JSON.stringify({ values: [['template_id', 'date', 'completed_at']] }),
+    body: JSON.stringify({ values: [['template_id', 'date', 'status', 'updated_at']] }),
+  })
+}
+
+// Migrates habit_completions from the old binary schema (row present = done) to an explicit
+// status column ('done' | 'not_done'), preserving existing done-markings.
+async function ensureHabitCompletionHeaders(spreadsheetId) {
+  const data = await req(`${BASE}/${spreadsheetId}/values/habit_completions!1:1`)
+  const headers = data.values?.[0] || []
+  if (headers.includes('status')) return
+  const allData = await req(`${BASE}/${spreadsheetId}/values/habit_completions`)
+  const rows = (allData.values || []).slice(1)
+  const newHeaders = ['template_id', 'date', 'status', 'updated_at']
+  const newRows = rows.map(r => [r[0] || '', r[1] || '', 'done', r[2] || new Date().toISOString()])
+  await req(`${BASE}/${spreadsheetId}/values/habit_completions!A1:D${newRows.length + 1}?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [newHeaders, ...newRows] }),
   })
 }
 
@@ -172,7 +189,7 @@ async function writeHeaders(spreadsheetId) {
     { range: 'trash!A1', values: [['id', 'sheet', 'original_id', 'data', 'deleted_at']] },
     { range: 'calendar_events!A1', values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status', 'category', 'description']] },
     { range: 'recurring_templates!A1', values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active', 'description']] },
-    { range: 'habit_completions!A1', values: [['template_id', 'date', 'completed_at']] },
+    { range: 'habit_completions!A1', values: [['template_id', 'date', 'status', 'updated_at']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST',
@@ -307,18 +324,21 @@ export async function updateRecurringTemplate(spreadsheetId, rowIndex, row) {
 
 // --- habit_completions ---
 
-export async function markHabitDone(spreadsheetId, templateId, date) {
-  await appendRow(spreadsheetId, 'habit_completions', [templateId, date, new Date().toISOString()])
-}
-
-export async function unmarkHabitDone(spreadsheetId, templateId, date) {
+// Sets (or clears, via status='pending') the explicit done/not_done status of one occurrence.
+export async function setHabitStatus(spreadsheetId, templateId, date, status) {
   const rows = await getRows(spreadsheetId, 'habit_completions')
   const idx = rows.findIndex(r => r.template_id === templateId && r.date === date)
-  if (idx !== -1) await deleteRow(spreadsheetId, 'habit_completions', idx)
+  if (status === 'pending') {
+    if (idx !== -1) await deleteRow(spreadsheetId, 'habit_completions', idx)
+    return
+  }
+  const row = [templateId, date, status, new Date().toISOString()]
+  if (idx !== -1) await updateRow(spreadsheetId, 'habit_completions', idx, row)
+  else await appendRow(spreadsheetId, 'habit_completions', row)
 }
 
 // Expands active recurring_templates into virtual occurrence tiles for each date in [startDate, endDate] (inclusive, 'YYYY-MM-DD' strings).
-// Marks an occurrence done if a matching habit_completions row exists.
+// status is 'done' | 'not_done' | 'pending', based on a matching habit_completions row (absent = pending).
 export function expandRecurringOccurrences(templates, completions, startDate, endDate) {
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const occurrences = []
@@ -331,7 +351,7 @@ export function expandRecurringOccurrences(templates, completions, startDate, en
       const dayLabel = DOW[d.getDay()]
       if (!days.includes(dayLabel)) continue
       const date = d.toISOString().slice(0, 10)
-      const done = completions.some(c => c.template_id === tmpl.id && c.date === date)
+      const completion = completions.find(c => c.template_id === tmpl.id && c.date === date)
       occurrences.push({
         templateId: tmpl.id,
         title: tmpl.title,
@@ -340,7 +360,7 @@ export function expandRecurringOccurrences(templates, completions, startDate, en
         end_time: tmpl.end_time,
         category: tmpl.category,
         description: tmpl.description,
-        done,
+        status: completion?.status || 'pending',
       })
     }
   }
