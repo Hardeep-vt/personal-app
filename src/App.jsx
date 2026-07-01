@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { AuthProvider } from './context/AuthContext'
+import { handleWhoopCallback } from './services/whoop'
 import { useAuth } from './context/useAuth'
 import FoodTab from './components/food/FoodTab'
 import ExerciseTab from './components/exercise/ExerciseTab'
@@ -17,6 +18,15 @@ const TABS = [
 function AppInner() {
   const { status, signIn, signOut, error, sandboxMode, toggleSandbox } = useAuth()
   const [activeTab, setActiveTab] = useState('calendar')
+
+  // Handle redirect back from Whoop OAuth
+  useEffect(() => {
+    if (window.location.search.includes('code=')) {
+      handleWhoopCallback().then(ok => {
+        if (ok) setActiveTab('exercise')
+      })
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const [calendarJumpDate, setCalendarJumpDate] = useState(null)

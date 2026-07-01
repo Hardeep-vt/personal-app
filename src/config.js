@@ -3,7 +3,7 @@ export const GOOGLE_CLIENT_ID = '1002595393352-moml2mjleukgs1o3p77qjes2j949a0th.
 // Fill these in after creating an app at developer.whoop.com
 // Redirect URI to set in Whoop app: https://hardeep-vt.github.io/personal-app/
 export const WHOOP_CLIENT_ID = 'c76454ec-9188-4546-9ff6-7b116fd9d7e8'
-export const WHOOP_REDIRECT_URI = 'https://hardeep-vt.github.io/personal-app/'
+export const WHOOP_REDIRECT_URI = window.location.origin + '/personal-app/'
 // Set this to your Cloudflare Worker URL after deploying cloudflare-worker/whoop-token-proxy.js
 export const WHOOP_TOKEN_PROXY_URL = 'https://muddy-disk-f411.hardeep240.workers.dev'
 
