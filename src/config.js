@@ -24,6 +24,8 @@ export const SHEETS = {
   CALENDAR_EVENTS: 'calendar_events',
   RECURRING_TEMPLATES: 'recurring_templates',
   HABIT_COMPLETIONS: 'habit_completions',
+  JOURNAL_METRICS: 'journal_metrics',
+  JOURNAL_ENTRIES: 'journal_entries',
 }
 
 export const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

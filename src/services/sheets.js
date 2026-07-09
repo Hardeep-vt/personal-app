@@ -57,6 +57,8 @@ export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id'
         { properties: { title: 'calendar_events' } },
         { properties: { title: 'recurring_templates' } },
         { properties: { title: 'habit_completions' } },
+        { properties: { title: 'journal_metrics' } },
+        { properties: { title: 'journal_entries' } },
       ],
     }),
   })
@@ -69,7 +71,7 @@ export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id'
 async function ensureSheets(spreadsheetId) {
   const meta = await req(`${BASE}/${spreadsheetId}`)
   const existing = meta.sheets.map(s => s.properties.title)
-  const needed = ['people', 'interactions', 'meal_times', 'trash', 'calendar_events', 'recurring_templates', 'habit_completions']
+  const needed = ['people', 'interactions', 'meal_times', 'trash', 'calendar_events', 'recurring_templates', 'habit_completions', 'journal_metrics', 'journal_entries']
   const toCreate = needed.filter(n => !existing.includes(n))
   if (toCreate.length > 0) {
     await req(`${BASE}/${spreadsheetId}:batchUpdate`, {
@@ -84,6 +86,8 @@ async function ensureSheets(spreadsheetId) {
     if (toCreate.includes('calendar_events')) await writeCalendarHeaders(spreadsheetId)
     if (toCreate.includes('recurring_templates')) await writeRecurringTemplateHeaders(spreadsheetId)
     if (toCreate.includes('habit_completions')) await writeHabitCompletionHeaders(spreadsheetId)
+    if (toCreate.includes('journal_metrics')) await writeJournalMetricsHeaders(spreadsheetId)
+    if (toCreate.includes('journal_entries')) await writeJournalEntriesHeaders(spreadsheetId)
   }
   await ensureFoodMacroHeaders(spreadsheetId)
   await ensureCalendarEventHeaders(spreadsheetId)
@@ -159,6 +163,20 @@ async function ensureHabitCompletionHeaders(spreadsheetId) {
   })
 }
 
+async function writeJournalMetricsHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/journal_metrics!A1:F1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['id', 'name', 'type', 'unit', 'sort_order', 'active']] }),
+  })
+}
+
+async function writeJournalEntriesHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/journal_entries!A1:E1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['id', 'date', 'metric_id', 'value', 'updated_at']] }),
+  })
+}
+
 async function writeMealTimesHeaders(spreadsheetId) {
   await req(`${BASE}/${spreadsheetId}/values/meal_times!A1:C1?valueInputOption=RAW`, {
     method: 'PUT',
@@ -190,6 +208,8 @@ async function writeHeaders(spreadsheetId) {
     { range: 'calendar_events!A1', values: [['id', 'title', 'date', 'start_time', 'end_time', 'todo_id', 'status', 'category', 'description']] },
     { range: 'recurring_templates!A1', values: [['id', 'title', 'days_of_week', 'start_time', 'end_time', 'category', 'active', 'description']] },
     { range: 'habit_completions!A1', values: [['template_id', 'date', 'status', 'updated_at']] },
+    { range: 'journal_metrics!A1', values: [['id', 'name', 'type', 'unit', 'sort_order', 'active']] },
+    { range: 'journal_entries!A1', values: [['id', 'date', 'metric_id', 'value', 'updated_at']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST',
@@ -365,6 +385,34 @@ export function expandRecurringOccurrences(templates, completions, startDate, en
     }
   }
   return occurrences
+}
+
+// --- journal_metrics ---
+
+export async function createJournalMetric(spreadsheetId, { name, type, unit = '', sort_order = 0 }) {
+  const row = [genId(), name, type, unit, String(sort_order), 'true']
+  await appendRow(spreadsheetId, 'journal_metrics', row)
+}
+
+export async function updateJournalMetric(spreadsheetId, rowIndex, row) {
+  await updateRow(spreadsheetId, 'journal_metrics', rowIndex, [
+    row.id, row.name, row.type, row.unit || '', String(row.sort_order ?? 0), String(row.active),
+  ])
+}
+
+// --- journal_entries ---
+
+// Sets (or clears, via value='') a metric's value for one date.
+export async function setJournalEntry(spreadsheetId, metricId, date, value) {
+  const rows = await getRows(spreadsheetId, 'journal_entries')
+  const idx = rows.findIndex(r => r.metric_id === metricId && r.date === date)
+  if (value === '') {
+    if (idx !== -1) await deleteRow(spreadsheetId, 'journal_entries', idx)
+    return
+  }
+  const row = [rows[idx]?.id || genId(), date, metricId, value, new Date().toISOString()]
+  if (idx !== -1) await updateRow(spreadsheetId, 'journal_entries', idx, row)
+  else await appendRow(spreadsheetId, 'journal_entries', row)
 }
 
 // --- Drive backups ---

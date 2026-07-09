@@ -3,8 +3,10 @@ import TodosTab from '../todos/TodosTab'
 import NotesTab from '../notes/NotesTab'
 import PeopleTab from '../people/PeopleTab'
 import TrashTab from '../trash/TrashTab'
+import JournalTab from '../journal/JournalTab'
 
 const SUB_TABS = [
+  { id: 'journal', label: 'Journal' },
   { id: 'todos', label: 'Todos' },
   { id: 'notes', label: 'Notes' },
   { id: 'people', label: 'People' },
@@ -12,9 +14,10 @@ const SUB_TABS = [
 ]
 
 export default function LifeTab({ onJumpToCalendar }) {
-  const [activeSubTab, setActiveSubTab] = useState('todos')
+  const [activeSubTab, setActiveSubTab] = useState('journal')
 
   const subTabContent = {
+    journal: <JournalTab />,
     todos: <TodosTab onJumpToCalendar={onJumpToCalendar} />,
     notes: <NotesTab />,
     people: <PeopleTab />,
