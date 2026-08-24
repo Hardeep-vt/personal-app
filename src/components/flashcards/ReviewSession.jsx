@@ -72,7 +72,7 @@ export default function ReviewSession({ deck, cards, onExit }) {
   const progress = ((initial.length - remaining) / initial.length) * 100
 
   return (
-    <div className="flex flex-col px-4 py-4 min-h-[calc(100svh-140px)]">
+    <div className="flex flex-col px-4 py-4 h-[calc(100svh-110px)]">
       <div className="flex items-center justify-between mb-3">
         <button onClick={onExit} className="text-gray-400 text-sm active:text-white">← Exit</button>
         <span className="text-gray-500 text-xs">{remaining} left</span>
@@ -82,20 +82,29 @@ export default function ReviewSession({ deck, cards, onExit }) {
         <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
 
-      <button
-        onClick={() => setFlipped(f => !f)}
-        className="flex-1 w-full bg-gray-800 rounded-2xl px-5 py-8 flex flex-col items-center justify-center gap-3 active:bg-gray-700 transition-colors min-h-64"
-      >
-        <span className={`text-[10px] font-semibold uppercase tracking-wider ${flipped ? 'text-amber-400' : 'text-gray-600'}`}>
-          {flipped ? 'Back' : 'Front'}
-        </span>
-        <p className="text-white text-lg leading-relaxed text-center whitespace-pre-wrap">
-          {flipped ? current.back : current.front}
-        </p>
-        {!flipped && <span className="text-gray-600 text-xs mt-2">Tap to reveal</span>}
-      </button>
+      {/* The card scrolls inside its own box so the answer buttons stay reachable
+          however long the card is. min-h-full on the inner button keeps short cards
+          vertically centred without clipping long ones. */}
+      <div className="flex-1 min-h-0 w-full bg-gray-800 rounded-2xl overflow-y-auto overscroll-contain">
+        <button
+          onClick={() => setFlipped(f => !f)}
+          className="w-full min-h-full px-5 py-7 flex flex-col items-center justify-center gap-3 active:bg-gray-700 transition-colors"
+        >
+          <span className={`text-[10px] font-semibold uppercase tracking-wider ${flipped ? 'text-amber-400' : 'text-gray-600'}`}>
+            {flipped ? 'Back' : 'Front'}
+          </span>
+          {/* Answers are multi-paragraph prose, so they read far better left-aligned;
+              questions are short and look better centred. */}
+          <p className={`text-white whitespace-pre-wrap ${
+            flipped ? 'text-base leading-relaxed text-left w-full' : 'text-lg leading-relaxed text-center'
+          }`}>
+            {flipped ? current.back : current.front}
+          </p>
+          {!flipped && <span className="text-gray-600 text-xs mt-2">Tap to reveal</span>}
+        </button>
+      </div>
 
-      <div className="flex gap-3 mt-4">
+      <div className="flex gap-3 mt-4 shrink-0">
         <button
           onClick={handleAgain}
           className="flex-1 bg-gray-800 text-gray-300 font-medium py-3.5 rounded-xl active:scale-95 transition-transform"
