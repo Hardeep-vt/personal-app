@@ -1,18 +1,34 @@
 import { useEffect, useState } from 'react'
-import { GOOGLE_CLIENT_ID, SCOPES, SPREADSHEET_NAME, SANDBOX_SPREADSHEET_NAME } from '../config'
+import { SPREADSHEET_NAME, SANDBOX_SPREADSHEET_NAME } from '../config'
 import { getOrCreateSpreadsheet, maybeRunDailyBackup } from '../services/sheets'
+import {
+  getStoredToken, requestToken, revokeToken, waitForGoogle,
+  hasConnectedBefore, setAuthLostHandler,
+} from '../services/googleAuth'
 import { AuthContext } from './authContextValue'
 
 export function AuthProvider({ children }) {
-  const hasToken = !!sessionStorage.getItem('gtoken')
-  const [status, setStatus] = useState(hasToken ? 'loading' : 'unauthenticated')
+  // A stored token that is still valid means this launch needs no interaction at all,
+  // so start in 'loading' only in that case and avoid a spinner otherwise.
+  const [status, setStatus] = useState(() => (getStoredToken() ? 'loading' : 'unauthenticated'))
   const [spreadsheetId, setSpreadsheetId] = useState(null)
   const [error, setError] = useState(null)
   const [sandboxMode, setSandboxMode] = useState(localStorage.getItem('sandbox_mode') === 'true')
+  const returning = hasConnectedBefore()
 
   useEffect(() => {
-    if (hasToken) initSpreadsheet(sandboxMode)
+    if (getStoredToken()) initSpreadsheet(sandboxMode)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentionally run once on mount only
+
+  // If the data layer hits a 401 mid-session, drop straight to the reconnect screen.
+  useEffect(() => {
+    setAuthLostHandler(() => {
+      setSpreadsheetId(null)
+      setStatus('unauthenticated')
+      setError('Your session expired. Tap reconnect to continue.')
+    })
+    return () => setAuthLostHandler(null)
+  }, [])
 
   async function initSpreadsheet(useSandbox = sandboxMode) {
     try {
@@ -36,39 +52,26 @@ export function AuthProvider({ children }) {
     await initSpreadsheet(next)
   }
 
-  function signIn() {
-    if (!window.google) {
-      setError('Google sign-in not loaded yet. Please refresh.')
-      return
+  async function signIn() {
+    setError(null)
+    try {
+      await waitForGoogle()
+      await requestToken()
+      await initSpreadsheet()
+    } catch (e) {
+      setError(e.message)
     }
-    const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: SCOPES,
-      callback: async (response) => {
-        if (response.error) {
-          setError(response.error)
-          return
-        }
-        sessionStorage.setItem('gtoken', response.access_token)
-        await initSpreadsheet()
-      },
-    })
-    client.requestAccessToken()
   }
 
   function signOut() {
-    const token = sessionStorage.getItem('gtoken')
-    if (token && window.google) {
-      window.google.accounts.oauth2.revoke(token)
-    }
-    sessionStorage.removeItem('gtoken')
+    revokeToken()
     localStorage.removeItem('spreadsheet_id')
     setSpreadsheetId(null)
     setStatus('unauthenticated')
   }
 
   return (
-    <AuthContext.Provider value={{ status, spreadsheetId, signIn, signOut, error, sandboxMode, toggleSandbox }}>
+    <AuthContext.Provider value={{ status, spreadsheetId, signIn, signOut, error, sandboxMode, toggleSandbox, returning }}>
       {children}
     </AuthContext.Provider>
   )

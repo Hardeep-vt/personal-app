@@ -1,11 +1,9 @@
+import { getStoredToken, notifyAuthLost } from './googleAuth'
+
 const BASE = 'https://sheets.googleapis.com/v4/spreadsheets'
 
-function getToken() {
-  return sessionStorage.getItem('gtoken')
-}
-
 async function req(url, options = {}) {
-  const token = getToken()
+  const token = getStoredToken()
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -14,6 +12,13 @@ async function req(url, options = {}) {
       ...(options.headers || {}),
     },
   })
+  // The token has expired or been revoked. It can't be renewed without a user
+  // gesture, so hand the app back to the reconnect screen rather than letting every
+  // subsequent request fail in the background.
+  if (res.status === 401) {
+    notifyAuthLost()
+    throw new Error('Your session expired. Tap reconnect to continue.')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err?.error?.message || `HTTP ${res.status}`)
@@ -29,10 +34,9 @@ export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id'
     return stored
   }
 
-  const search = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
-    { headers: { Authorization: `Bearer ${getToken()}` } }
-  ).then(r => r.json())
+  const search = await req(
+    `https://www.googleapis.com/drive/v3/files?q=name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
+  )
 
   if (search.files?.length > 0) {
     const id = search.files[0].id

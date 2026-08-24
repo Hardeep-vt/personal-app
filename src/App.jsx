@@ -10,25 +10,19 @@ import FlashcardsTab from './components/flashcards/FlashcardsTab'
 import usePullToRefresh from './hooks/usePullToRefresh'
 
 const SECTIONS = [
-  { id: 'calendar', label: 'Calendar', icon: '📅' },
+  { id: 'flashcards', label: 'Flashcards', icon: '🗂️' },
+  { id: 'life', label: 'Life', icon: '📋' },
   { id: 'food', label: 'Food', icon: '🥗' },
   { id: 'exercise', label: 'Exercise', icon: '💪' },
-  { id: 'life', label: 'Life', icon: '📋' },
-  { id: 'flashcards', label: 'Flashcards', icon: '🗂️' },
+  { id: 'calendar', label: 'Calendar', icon: '📅' },
 ]
 
-const SECTION_KEY = 'active_section'
-
 function AppInner() {
-  const { status, signIn, signOut, error, sandboxMode, toggleSandbox } = useAuth()
-  // Reopen on whichever section was last used, rather than always landing on Calendar.
-  const [activeTab, setActiveTab] = useState(() => {
-    const saved = localStorage.getItem(SECTION_KEY)
-    return SECTIONS.some(s => s.id === saved) ? saved : 'calendar'
-  })
+  const { status, signIn, signOut, error, sandboxMode, toggleSandbox, returning } = useAuth()
+  // Always land on Flashcards: the app opens as a phone shortcut, and starting on
+  // the revision decks is the whole point of opening it.
+  const [activeTab, setActiveTab] = useState('flashcards')
   const [menuOpen, setMenuOpen] = useState(false)
-
-  useEffect(() => { localStorage.setItem(SECTION_KEY, activeTab) }, [activeTab])
 
   // Handle redirect back from Whoop OAuth
   useEffect(() => {
@@ -68,17 +62,21 @@ function AppInner() {
     return (
       <div className="flex flex-col items-center justify-center min-h-svh gap-6 px-6">
         <div className="text-center">
-          <div className="text-5xl mb-4">📋</div>
+          <div className="text-5xl mb-4">{returning ? '🗂️' : '📋'}</div>
           <h1 className="text-2xl font-semibold text-white mb-2">MyApp</h1>
-          <p className="text-gray-400 text-sm">Your personal tracker — calendar, food, exercise, life & flashcards</p>
+          <p className="text-gray-400 text-sm">
+            {returning
+              ? 'Welcome back — one tap to pick up where you left off.'
+              : 'Your personal tracker — flashcards, life, food, exercise & calendar'}
+          </p>
         </div>
-        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+        {error && <p className="text-red-400 text-sm text-center max-w-xs">{error}</p>}
         <button
           onClick={signIn}
           className="flex items-center gap-3 bg-white text-gray-800 font-medium px-6 py-3 rounded-xl text-sm shadow-lg active:scale-95 transition-transform"
         >
           <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="" />
-          Connect with Google
+          {returning ? 'Reconnect' : 'Connect with Google'}
         </button>
         <p className="text-gray-600 text-xs text-center max-w-xs">
           Your data is stored only in your own Google Sheets. No third-party servers.
