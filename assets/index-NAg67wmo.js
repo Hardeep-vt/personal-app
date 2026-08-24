@@ -1072,7 +1072,7 @@ Often the best lever is not resampling at all — just move the decision THRESHO
 
 What it actually means: performance comes from an algorithm's INDUCTIVE BIAS matching the structure of your specific problem. CNNs beat MLPs on images because locality and translation equivariance are true of images, not because convolution is inherently better.
 
-Practical takeaway: this is why "which model is best?" has no answer without the data. It also justifies empirical benchmarking — and explains why boosted trees still beat deep nets on most tabular problems.`}]},f={deck:"ML Deployment (MLOps)",cards:[{front:"Training/serving skew",back:`The model sees differently-computed features in production than it did in training, so live performance silently falls short of offline metrics.
+Practical takeaway: this is why "which model is best?" has no answer without the data. It also justifies empirical benchmarking — and explains why boosted trees still beat deep nets on most tabular problems.`}]},f=[{front:"Training/serving skew",back:`The model sees differently-computed features in production than it did in training, so live performance silently falls short of offline metrics.
 
 Common causes: features computed by separate code paths (Spark for training, Java service for serving); different default/missing-value handling; time-zone or unit mismatches; a training pipeline that had access to data arriving only after the decision point.
 
@@ -1236,7 +1236,553 @@ Examples: a fraud model that declines a segment never observes their good behavi
 
 Detection: monitor whether the training distribution is narrowing over time — coverage, entropy, and share of traffic to the top items.
 
-Mitigations: randomised exploration holdouts, propensity logging with IPS correction, and periodically training on data from a randomised slice rather than model-selected traffic.`}]},g={deck:"Recommendation Systems",cards:[{front:"Collaborative filtering — user-based vs item-based",back:`Recommend using behaviour patterns across users, with no content features at all. User-based: find similar users, recommend what they liked. Item-based: find items co-liked by the same users.
+Mitigations: randomised exploration holdouts, propensity logging with IPS correction, and periodically training on data from a randomised slice rather than model-selected traffic.`}],g=[{front:"Model server vs embedded model",back:`Embedded: the model runs inside the application process (load the artifact, call predict). Model server: a separate service the app calls over the network (TF Serving, TorchServe, Triton, KServe).
+
+Why separate it: independent scaling and hardware (the app on CPU, the model on GPU), one model shared by many services, and model updates without redeploying the app.
+
+Cost of separating: a network hop of added latency, plus serialisation and a service to operate.
+
+Rule of thumb: embed for tiny models on the hot path where latency is precious; use a server once the model needs a GPU, is shared, or is updated on its own cadence.`},{front:"REST vs gRPC for model serving",back:`REST/JSON: human-readable, universally supported, easy to debug. gRPC: binary protobuf over HTTP/2, with streaming and multiplexing.
+
+Why gRPC wins internally: protobuf is far more compact than JSON, so serialising large tensors is much cheaper, and HTTP/2 multiplexing avoids head-of-line blocking. For a high-QPS embedding or feature payload the encoding cost alone is significant.
+
+When REST is fine: low QPS, small payloads, public or browser-facing APIs, or when debuggability matters more than microseconds.
+
+Gotcha: JSON cannot represent raw binary efficiently — base64 inflates tensors ~33% and adds encode/decode cost on both ends.`},{front:"Inference graph optimisation (ONNX, TensorRT, torch.compile)",back:`Convert a trained model into an optimised execution graph: fuse operators, fold constants, pick fast kernels, and specialise for the target hardware.
+
+Under the hood: operator FUSION is the big win — a conv+bias+ReLU becomes one kernel, cutting memory round-trips. Constant folding precomputes anything not input-dependent.
+
+Tools: ONNX as a portable interchange format; TensorRT for NVIDIA GPUs; ONNX Runtime cross-platform; torch.compile / XLA graph capture.
+
+Gotchas: dynamic shapes defeat many optimisations (some engines specialise per shape, so variable batch sizes trigger recompiles); and numerical results can differ slightly from the training framework, so re-validate accuracy after conversion.`},{front:"ONNX as an interchange format",back:`A framework-agnostic graph format. Export from PyTorch/TF/sklearn, run anywhere with an ONNX runtime.
+
+Why it helps: decouples training framework from serving runtime. You can train in PyTorch and serve with a lean C++ runtime that has no Python and no PyTorch dependency, cutting image size and cold start.
+
+Gotchas: not every operator or custom layer has an ONNX equivalent, so exotic models fail to export or fall back to slow paths; opset version mismatches between exporter and runtime cause subtle failures; and control flow (loops, conditionals) exports poorly.
+
+Always: re-run your eval set through the exported model — export is a re-implementation and can silently change outputs.`},{front:"Cold start in model serving",back:`The first request after a new instance spins up is slow because the model must be loaded into memory (and onto the GPU), the runtime initialised, and caches warmed.
+
+Why it bites: loading a multi-GB model can take tens of seconds. With scale-to-zero or autoscaling, real user requests hit cold instances and see huge tail latency.
+
+Mitigations: a readiness probe that only passes AFTER the model is loaded (so traffic never routes to a not-ready pod), a warm pool of pre-loaded instances for baseline traffic, model warmup (a synthetic request to trigger lazy GPU allocation and kernel compilation), and mmap/lazy weight loading.
+
+Gotcha: scale-to-zero saves money but reintroduces cold starts — a direct cost/latency trade.`},{front:"Model warmup",back:`Sending synthetic requests to a freshly loaded model before it takes real traffic.
+
+Why it is necessary: the first real inference triggers one-time costs — lazy CUDA context creation, JIT kernel compilation, cuDNN autotuning, and cache population. Without warmup, the first users eat all of it as latency.
+
+How: run representative inputs (including the shapes and batch sizes you expect) at startup, gated behind the readiness probe so traffic waits.
+
+Gotcha: warm with the ACTUAL production shapes. If you warm with batch size 1 but serve batch 32, the batch-32 kernels compile on the first real batch and that request is slow anyway.`},{front:"GPU utilisation and why batch size 1 wastes the GPU",back:`A GPU is a massively parallel device; a single small request leaves most of its compute idle while kernel-launch and memory-transfer overhead dominate.
+
+Under the hood: throughput rises with batch size until the GPU saturates, so a batch of 32 often costs barely more wall-clock time than a batch of 1. Serving at batch 1 can waste 90%+ of the hardware you are paying for.
+
+Levers: dynamic batching to fill batches, MPS or time-slicing to share one GPU across processes, and MIG to partition a GPU into isolated instances.
+
+Gotcha: measure GPU utilisation, not just CPU. A GPU service can show low CPU and still be the bottleneck — or be paid-for and idle.`},{front:"Multi-tenancy on GPUs (MPS, MIG, time-slicing)",back:`Sharing one physical GPU across multiple models or tenants to raise utilisation.
+
+Options: TIME-SLICING interleaves work (simple, but no isolation — one tenant can starve another); MPS (Multi-Process Service) runs kernels from several processes concurrently for better throughput; MIG partitions the GPU into hardware-isolated instances with dedicated memory and compute.
+
+Trade-off: MIG gives predictable isolation but fixed partition sizes waste capacity; MPS packs better but leaks interference; time-slicing is cheapest and least safe.
+
+When it matters: many small models that each underuse a full GPU. Consolidating them is often the biggest single cost saving in ML serving.`},{front:"Throughput vs latency — the fundamental serving trade-off",back:`Optimising one usually hurts the other. Batching raises throughput (requests/sec) but adds queueing latency; small batches cut latency but waste hardware.
+
+Under the hood: they answer different questions. Latency is per-request wall time; throughput is aggregate work per unit cost. A batch-serving pipeline maximises throughput; a real-time API is latency-bound.
+
+How to reason: set a latency SLO (p99), then maximise throughput WITHIN that budget — tune max batch size and max wait time so the batch either fills or times out before the budget is spent.
+
+Gotcha: reporting mean latency hides the queueing tail that batching creates. Always hold the SLO on p99.`},{front:"Mixed-precision and lower-precision inference",back:`Run inference in FP16/BF16 instead of FP32: half the memory, and much faster matmuls on tensor-core hardware.
+
+BF16 vs FP16: BF16 keeps FP32's exponent range (fewer overflow/underflow issues) at the cost of mantissa precision; FP16 has more precision but a narrow range that can overflow. BF16 is usually the safer default for inference.
+
+Why it is nearly free: inference is far more tolerant of low precision than training, since there is no gradient accumulation to destabilise.
+
+Gotchas: some ops (softmax, layernorm, reductions) still need FP32 for numerical stability — hence "mixed" precision. Validate accuracy; occasionally a layer is precision-sensitive.`},{front:"Model loading: memory-mapping and lazy loading",back:`Loading a large model naively reads the whole file into process memory, which is slow and duplicates it per process.
+
+mmap: map the weights file into the address space so the OS pages them in on demand and SHARES one copy across processes via the page cache. Multiple workers on a box then share physical memory instead of each holding a full copy.
+
+Lazy loading: bring layers into GPU memory only as needed, enabling models larger than a single device via offloading.
+
+Gotcha: mmap makes the FIRST access to each page a disk read, so cold latency shifts into early requests — pair it with warmup. And offloading to CPU/disk trades memory for large latency hits.`},{front:"Concurrency model: sync, async, and worker pools",back:`A serving process must handle many in-flight requests. The model call is often GPU-bound (releases the GIL) while I/O — feature fetches, network — is waiting.
+
+Patterns: a thread/worker pool sized to the hardware; ASYNC I/O so feature fetches and downstream calls do not block a worker; and a dedicated inference thread or process that batches across concurrent requests.
+
+Gotcha: too many worker processes each loading the model exhausts GPU memory; too few underutilise it. The right count balances GPU memory against concurrency.
+
+Key point: separate the I/O-bound part (async, high concurrency) from the compute-bound inference (batched, bounded by hardware). Conflating them wastes both.`},{front:"Serverless inference — when it fits and when it does not",back:`Fully managed, scale-to-zero, pay-per-request functions running the model.
+
+Fits: spiky or low traffic, where paying for idle instances dominates cost, and where occasional cold-start latency is acceptable.
+
+Does NOT fit: steady high traffic (always-on is cheaper), strict low-latency paths (cold starts and no warm GPU), and large models (load time and memory limits).
+
+Gotchas: GPU support is limited and expensive on serverless; the model artifact must fit deployment size limits or be fetched at cold start (adding seconds); and per-request billing can exceed provisioned cost above a surprisingly low QPS.
+
+Decision: estimate cost at your real QPS both ways — the crossover is often lower than expected.`},{front:"Ensemble and DAG serving (inference pipelines)",back:`Real predictions often chain steps: preprocess → embed → model → business-rules post-process, sometimes across several models.
+
+Approaches: an inference graph/ensemble in the server (Triton ensembles, KServe inference graphs) runs the DAG close to the hardware, avoiding network hops between stages; alternatively an orchestration service calls each stage.
+
+Why in-server helps: intermediate tensors stay on-device instead of being serialised across the network between every step.
+
+Gotchas: a chain is only as fast as its slowest stage, and each stage is a failure point — you need per-stage timeouts and fallbacks. Version the WHOLE graph, since changing one stage changes end-to-end behaviour.`},{front:"Preprocessing parity — the tokeniser/transform trap",back:`The exact preprocessing used in training must run identically at serving: tokenisation, normalisation, image resizing, categorical encoding.
+
+Why it silently breaks: training preprocessing is often Python/pandas, while serving may be a different language or library. A different resize interpolation, a mismatched normalisation constant, or a tokeniser version bump shifts inputs subtly — accuracy drops with no error.
+
+Fixes: package preprocessing WITH the model (as graph ops, or a shared library used by both paths), pin exact versions, and add an online/offline consistency check on the transformed features, not just the raw inputs.
+
+Gotcha: this is training/serving skew hiding in the preprocessing layer — the most common place it lurks.`},{front:"Edge and on-device inference",back:`Running the model on the user's device (phone, browser, IoT) instead of a server.
+
+Why: near-zero network latency, privacy (data never leaves the device), offline capability, and no per-request server cost.
+
+Costs: tight compute/memory/battery budgets force heavy compression (quantisation, pruning, distillation); you cannot easily update the model or gather centralised labels; and device heterogeneity means many hardware targets.
+
+Tooling: TF Lite, Core ML, ONNX Runtime Mobile, WebGPU/WASM in the browser.
+
+Gotcha: shipping the model to the client means it can be extracted and reverse-engineered — do not put anything secret in on-device weights, and expect the model itself to leak.`}],y=[{front:"Streaming vs batch feature computation",back:`Batch: recompute features on a schedule over the warehouse (cheap, simple, high latency to freshness). Streaming: update features event-by-event as data arrives (fresh, but complex and stateful).
+
+Choose by FRESHNESS need: a "user's 30-day spend" feature is fine hourly; "items viewed in this session" must be streaming.
+
+Under the hood: the hard part of streaming is maintaining aggregations (windowed counts, running sums) with correct state, out-of-order events, and exactly-once semantics.
+
+Gotcha: computing a feature one way for training (batch backfill) and another for serving (streaming) is a classic source of training/serving skew — the two code paths drift.`},{front:"Feature freshness and staleness SLAs",back:`How recent a feature value is when the model reads it. Every online feature has an implicit or explicit freshness SLA.
+
+Why it matters: a fraud model reading an hour-old "transactions in last 5 minutes" is blind to the attack in progress. A recommender reading yesterday's session context recommends stale intent.
+
+Under the hood: freshness is bounded by the pipeline — batch cadence, streaming lag, and cache TTL all add staleness.
+
+Monitor it: track feature timestamp vs serving time, and alert on staleness. A stalled pipeline that silently serves old features is worse than an error, because predictions keep flowing and look fine.`},{front:"Backfilling features and point-in-time correctness",back:`To build a training set you must reconstruct each feature's value AS IT WAS at each historical event — not its current value.
+
+Why naive backfill leaks: joining today's feature table to old events attaches future information (a "lifetime value" that already includes the outcome you predict), giving great offline metrics and a broken production model.
+
+Implementation: append-only/versioned feature tables and AS-OF joins on event timestamps, so each label row gets the feature snapshot valid just before it.
+
+Gotcha: even the streaming pipeline's own lag must be modelled — if a feature was actually available 10 minutes late in production, the training set should reflect that delay, not instantaneous availability.`},{front:"Data validation in pipelines (schema and distribution checks)",back:`Automated checks that incoming data matches expectations BEFORE it trains or serves a model.
+
+Two layers: SCHEMA (types, required fields, allowed categories, ranges) catches structural breakage; DISTRIBUTION (means, null rates, cardinality, drift vs a baseline) catches silent semantic shifts.
+
+Tools: Great Expectations, TFDV, Deequ, or custom assertions in the DAG.
+
+Why it is essential: upstream teams change schemas without telling you, an ETL job half-fails, a unit changes from cents to dollars. Without validation the model trains on or serves garbage and degrades quietly.
+
+Gotcha: an unseen categorical VALUE (not a schema change) is a common silent breaker — validate the value set, not just the type.`},{front:"Data contracts",back:`An explicit, enforced agreement between a data producer and its consumers about schema, semantics, freshness, and quality.
+
+Why MLOps needs them: models depend on upstream tables owned by teams who do not know a model consumes them. A "harmless" refactor — renaming a column, changing an enum, altering a unit — silently breaks the model.
+
+How: version the schema, validate producer output against the contract in CI, and treat a breaking change as an API change requiring migration.
+
+Gotcha: without contracts, data lineage failures are discovered downstream as model degradation days later — far from the actual change. Contracts move the failure to the producer's deploy, where it is cheap to fix.`},{front:"Idempotency in data pipelines",back:`Re-running a pipeline step with the same input produces the same result and no duplicate side effects.
+
+Why it is essential: pipelines fail and retry constantly. A non-idempotent step that APPENDS on each run double-counts on retry, corrupting features and labels.
+
+How: use deterministic keys and UPSERT/overwrite-by-partition instead of blind append; make writes keyed so a replay overwrites rather than duplicates.
+
+Gotcha: idempotency plus at-least-once delivery is how you achieve effectively-exactly-once results without expensive true exactly-once machinery. If a step is idempotent, at-least-once delivery is safe.`},{front:"Exactly-once vs at-least-once vs at-most-once",back:`Delivery guarantees for streaming/event systems. At-most-once: may drop events (fast, lossy). At-least-once: never drops, may DUPLICATE (safe if consumers are idempotent). Exactly-once: no loss, no duplicates (expensive, needs coordinated state and offsets).
+
+Practical stance: true exactly-once is costly, so most systems use AT-LEAST-ONCE delivery with IDEMPOTENT consumers, which yields exactly-once EFFECTS without the overhead.
+
+Why it matters for ML: duplicated events inflate count features and label counts; dropped events silently bias them. Both corrupt the model, and neither throws an error.
+
+Gotcha: "exactly-once" claims usually mean exactly-once processing within one system, not end-to-end across sinks.`},{front:"Late-arriving data and watermarks",back:`Events often arrive out of order and late (mobile buffering, network delays, batch uploads).
+
+Watermark: the streaming system's estimate of "we have probably seen all events up to time T," used to decide when to close a window and emit its aggregate.
+
+The trade-off: wait longer (later watermark) to capture stragglers and be more correct, or emit sooner and be fresher but miss late events.
+
+Gotcha: data arriving after the watermark is either dropped or triggers a costly recomputation of an already-emitted result. In ML this means feature values computed at serving time can differ from the same feature backfilled later — a subtle skew.
+
+Design choice: allowed lateness bounds this trade explicitly.`},{front:"Pipeline orchestration and DAGs",back:`Workflow schedulers (Airflow, Dagster, Prefect, Kubeflow) model pipelines as DAGs of tasks with dependencies, scheduling, retries, and backfills.
+
+What they give you: dependency management (train only after features are built), retries with backoff, backfilling historical runs, and observability into what ran when.
+
+MLOps specifics: tasks are heterogeneous (SQL, Spark, GPU training, deployment) and long-running; idempotency and data-aware scheduling (run when data lands, not just on a clock) matter more than in generic ETL.
+
+Gotcha: scheduling on a fixed CLOCK when upstream data is late trains on incomplete data. Prefer data-availability triggers (sensors) over pure cron.`},{front:"Materialised vs on-demand features",back:`Materialised: precompute and store the feature, serve by lookup (fast, but can be stale and costs storage). On-demand: compute at request time from raw signals (always fresh, but adds serving latency and compute).
+
+Decision: materialise features that are expensive and slow-changing (a user's 90-day aggregate); compute on-demand features that depend on request context (distance from current location, time since last event).
+
+Under the hood: this is a classic space/time (and freshness/latency) trade. Feature stores support both, and a single model often mixes them.
+
+Gotcha: an on-demand feature must be computed identically in training and serving, or you reintroduce skew — the exact risk materialisation avoids.`},{front:"Label pipelines and delayed labels",back:`The ground-truth label often arrives long after the prediction — a conversion days later, a chargeback months later, a subscription renewal a year later.
+
+Consequences: you cannot evaluate accuracy in real time, and building a training set requires an ATTRIBUTION WINDOW deciding how long to wait for a label before calling it negative.
+
+Gotcha: labelling "no conversion YET" as a hard negative mislabels recent events that simply have not converted, biasing the model against recent data. Delayed-feedback models treat unconverted recent events as CENSORED, not negative.
+
+Design: match the training-set cutoff to the attribution window, and exclude events too recent to have a stable label.`},{front:"Data lineage and provenance",back:`A record of where each dataset, feature, and model came from: which sources, transforms, code version, and run produced it.
+
+Why it is essential in ML: when a model degrades or a feature looks wrong, lineage lets you trace back to the upstream change. When a data source is found to be corrupt or non-compliant, lineage identifies every downstream model that must be retrained.
+
+Also: reproducibility and audit/compliance ("what data trained the model that made this decision?").
+
+Gotcha: lineage must span DATA and CODE and MODELS together. Tracking only code versions misses that the same code produced different models because the data changed underneath it.`},{front:"Feature versioning and the online/offline store",back:`A feature definition can change (new logic, new source), so features must be versioned like code, and training must use the version that will serve.
+
+Online vs offline store: the OFFLINE store holds full history for training (point-in-time correct); the ONLINE store holds the latest value per entity for low-latency serving. Both are populated from ONE definition to avoid skew.
+
+Gotcha: changing a feature's computation without versioning means models trained on the old logic run against the new logic in production — silent skew. And backfilling a new feature version into history requires recomputing it point-in-time correctly, not just applying today's logic to old data.`},{front:"Schema evolution and backward compatibility",back:`Data schemas change over time; pipelines and models must tolerate it without breaking.
+
+Safe changes (backward compatible): adding an optional field, widening a type. Unsafe: removing a field a model uses, renaming, changing a unit, narrowing a type, or repurposing an enum value.
+
+How to manage: schema registries with compatibility rules, defaults for new/missing fields, and treating breaking changes as versioned migrations.
+
+Gotcha for models: a model trained with a feature that later disappears will receive nulls/defaults in production — if it was not trained to handle missing values there, its behaviour on that feature is undefined. Feature removal is a model-breaking change, not just a data change.`},{front:"Training-data snapshotting and versioning",back:`Capturing the exact dataset a model was trained on, immutably, so the model can be reproduced and audited.
+
+Why code versioning is not enough: the same training code produces different models when the data changes underneath it. Without a data snapshot, "just retrain it" does not reproduce the model.
+
+Tools/approaches: DVC, LakeFS, Delta/Iceberg time travel, or content-addressed dataset hashes recorded in the model registry.
+
+Gotcha: snapshotting must be point-in-time correct — pinning "the users table as of the training date," not the mutable current table. And the snapshot must be cheap (references/deltas), or teams skip it and lose reproducibility.`}],b=[{front:"The four layers of ML monitoring",back:`A useful mental model, from cheapest/fastest signal to most meaningful:
+
+(1) SYSTEM — latency, error rate, throughput, saturation. Standard SRE metrics. (2) DATA — schema violations, null rates, unseen categories, feature drift. (3) MODEL — prediction distribution, confidence distribution, and accuracy once labels arrive. (4) BUSINESS — the KPI the model exists to move.
+
+Key insight: signal availability is inverse to meaningfulness. System metrics are instant but tell you little about model quality; business metrics matter most but arrive slowest.
+
+Alerting discipline: PAGE on system and business metrics; make drift a ticket, not a page. Drift is noisy and rarely a live incident.`},{front:"Prediction drift as the first-line monitor",back:`Tracking the distribution of the model's OUTPUTS over time (predicted scores, class rates).
+
+Why it is the single most valuable signal: it is available immediately (no labels needed), and it AGGREGATES every upstream problem — input drift, a broken feature, a bad deploy — into one number. If the input distribution shifts or a feature pipeline breaks, the prediction distribution usually moves.
+
+What a shift means: either the world changed (real) or your pipeline broke (bug). It does not distinguish them, but it tells you to look.
+
+Gotcha: a stable prediction distribution does NOT guarantee correctness — a model can be confidently wrong in a stable way. Pair it with delayed accuracy.`},{front:"Monitoring performance without labels",back:`When ground truth is delayed or absent, you still need a health signal.
+
+Proxy approaches: prediction/confidence distribution shifts, input drift metrics, and a small human-labelled audit sample. More advanced: importance-weighting or model-based estimators that ESTIMATE accuracy under covariate shift from unlabelled production data.
+
+Why it matters: waiting for labels means discovering a broken model weeks late.
+
+Gotcha: label-free estimators assume the P(Y|X) relationship is unchanged (covariate shift only). Under CONCEPT drift — the relationship itself changing — they can report healthy while the model is quietly wrong, because they were calibrated on the old relationship.`},{front:"Embedding drift monitoring",back:`For models on text/images/users, monitor whether the distribution of EMBEDDINGS shifts over time.
+
+Why: raw high-dimensional inputs are hard to monitor directly, but their embeddings compress semantics into a trackable space. New topics, new user behaviour, or a new content type show up as movement in embedding space before accuracy drops.
+
+How: track summary statistics of embeddings, distances to reference centroids, or a drift metric (MMD, KL on projected dimensions) against a training baseline.
+
+Gotcha: if you retrain the embedding model, the space changes and your baseline is invalid — drift metrics must be re-baselined on the new embedding version, or they alarm on the model change itself.`},{front:"Out-of-distribution / novelty detection at serving",back:`Detecting inputs unlike anything in training, where the model's prediction is unreliable regardless of its confidence.
+
+Why it matters: models EXTRAPOLATE badly and often do so with high confidence. An OOD input (a new language, a corrupted image, an attack) gets a confident, wrong answer.
+
+Approaches: distance to training distribution in feature/embedding space, density or reconstruction-error models, or ensemble disagreement.
+
+What to do on OOD: abstain, route to a fallback or human, or flag for review rather than serve a confident guess.
+
+Gotcha: softmax probability is NOT a reliable OOD signal — networks are systematically overconfident on OOD inputs. Use dedicated detectors.`},{front:"Silent failures in ML systems",back:`The defining hazard of ML in production: the system keeps returning predictions, throws no errors, and passes health checks — while quietly getting worse.
+
+Examples: a feature pipeline serving stale values, an upstream unit change, a model degrading under drift, a preprocessing mismatch, a cache serving a previous model's outputs.
+
+Why traditional monitoring misses it: HTTP 200s and normal latency look healthy. The failure is in the CONTENT of predictions, not their availability.
+
+Defences: monitor prediction and feature distributions (not just uptime), online/offline consistency checks, and a randomised labelled holdout. Assume the failure mode is silent degradation, not a crash.`},{front:"SLIs, SLOs, and error budgets for ML",back:`SLI: a measured indicator (p99 latency, prediction availability, feature freshness). SLO: the target (p99 < 200ms, 99.9% availability). Error budget: the allowed shortfall (0.1%), spent on risk.
+
+ML-specific SLIs beyond uptime: feature freshness, prediction-distribution stability, model accuracy (when labels arrive), and fallback rate.
+
+Why the budget framing helps: it makes the reliability/velocity trade explicit — if the error budget is intact, ship faster; if exhausted, freeze and stabilise.
+
+Gotcha: an accuracy SLO needs labels, which are delayed, so you monitor leading proxies against the SLO in the interim and reconcile when labels land.`},{front:"Logging predictions for audit and debugging",back:`Persisting each prediction with its inputs, model version, and timestamp.
+
+Why essential: to debug a bad prediction you must reproduce the EXACT features and model that produced it; to compute delayed accuracy you join logged predictions to labels that arrive later; and compliance may require explaining any individual decision.
+
+What to log: the transformed features actually fed to the model (not just raw inputs — that is what catches skew), the model/version id, the score, and the request context.
+
+Gotchas: volume and cost (sample or aggregate high-QPS logs), PII in logged features (redact/hash), and retention limits vs audit requirements. Logging RAW inputs but not TRANSFORMED features misses the most common bug class.`},{front:"Distributed tracing for ML pipelines",back:`Propagating a trace/correlation id through every hop of a request — gateway, feature fetches, preprocessing, model call, post-processing — so you can see where latency and errors occur.
+
+Why ML needs it: an inference request fans out to multiple feature stores and possibly several models. When p99 latency spikes, tracing shows WHICH stage (often a slow feature fetch, not the model) is responsible.
+
+What it reveals: per-stage latency breakdown, which dependency timed out, and which fallback engaged.
+
+Gotcha: without tracing, "the model is slow" is unactionable — the model compute is frequently a small fraction of total latency, dominated by feature I/O and network hops.`},{front:"Alerting: pages vs tickets, and alert fatigue",back:`Not every anomaly deserves to wake someone. Over-alerting trains responders to ignore alerts, so real incidents get missed.
+
+Discipline: PAGE on actionable, urgent, user-impacting problems — system down, error spike, business metric cliff. TICKET (or dashboard) for drift, gradual degradation, and informational trends that need investigation but not at 3am.
+
+Why ML tempts over-alerting: drift signals are noisy and fire constantly; wiring them to pages guarantees fatigue.
+
+Good alerts: have a clear owner, a runbook, and a low false-positive rate. If an alert has no defined response, it should not page.`},{front:"Choosing a drift baseline and reference window",back:`Drift detection compares live data to a REFERENCE. The choice of reference decides what "drift" means.
+
+Options: the TRAINING distribution (detects any divergence from what the model learned — the right baseline for model validity), or a RECENT trailing window (detects sudden changes but treats slow drift as the new normal).
+
+Gotcha: a trailing-window baseline slowly "accepts" gradual drift, so a model can degrade steadily while the drift monitor stays quiet — the baseline crept along with the data. For model-validity monitoring, anchor to the training distribution.
+
+Also: seasonality. Comparing Monday to Sunday flags false drift; compare like-for-like periods.`},{front:"Canary metrics and automated rollback triggers",back:`During a canary, watch a small set of health metrics and automatically halt/roll back if they regress.
+
+What to watch: system health (errors, latency), invariants (assignment ratios, guardrail metrics that must not move), and — where available fast — a leading quality proxy.
+
+Why automate: humans watching dashboards miss regressions or react slowly; an automated trigger bounds the blast radius.
+
+Gotchas: the trigger needs enough traffic/time to be statistically meaningful (too little and it fires on noise); it must account for novelty effects that make early metrics unrepresentative; and it must know the difference between a real regression and normal variance — set thresholds from historical variability, not guesses.`},{front:"Feature attribution drift (monitoring WHY, not just WHAT)",back:`Beyond monitoring inputs and outputs, track whether the FEATURES DRIVING predictions have changed — e.g. average SHAP attributions per feature over time.
+
+Why it adds signal: input distributions can look stable while the model's RELIANCE on features shifts, or a feature that was important becomes constant (a broken pipeline serving a default), which output monitoring might miss.
+
+Example: a feature silently pipes a null/default; its attribution collapses to zero. Attribution monitoring flags "the model stopped using feature X" even though predictions still flow.
+
+Gotcha: attribution is expensive to compute per request — sample it, and remember SHAP shows model reliance, not causation.`},{front:"Business-metric guardrails vs the optimisation target",back:`Monitor metrics the model is NOT trying to improve but must not harm: latency, revenue, unsubscribes, complaint rate, downstream conversion.
+
+Why: optimising a single target invites collateral damage. A model that lifts CTR can raise it by degrading latency or by cannibalising another surface, and the target metric will not reveal it.
+
+How: define guardrails up front with looser thresholds, and block promotion on any guardrail regression even when the target improves.
+
+Gotcha: guardrails are also your defence against Goodhart's law — when the proxy target is gamed, the guardrails catch the harm the gaming causes. Without them, "the metric went up" is not evidence the product improved.`}],v=[{front:"Horizontal vs vertical scaling for inference",back:`Vertical: a bigger machine (more/faster GPU, more RAM). Horizontal: more machines behind a load balancer.
+
+When vertical is forced: a model that does not fit on one device, or a single request needing more memory than a small node has.
+
+Why horizontal is preferred for throughput: it scales near-linearly with traffic, tolerates node failure, and matches autoscaling. But it needs the model to be replicable and stateless.
+
+Gotcha: GPU nodes are expensive and scarce, so horizontal scaling of GPU services is costly and slow to provision. This is why raising per-node UTILISATION (batching, multi-tenancy) often beats adding nodes.`},{front:"Load balancing and session affinity for model servers",back:`Distributing requests across replicas. Usually stateless round-robin/least-connections is right.
+
+When affinity matters: if replicas hold per-user CACHE (KV cache for an LLM conversation, a warmed embedding cache), routing a user consistently to the same replica (consistent hashing / sticky sessions) raises cache hit rate dramatically.
+
+The trade-off: affinity improves cache locality but hurts load balancing — a hot user can overload one replica, and a replica loss loses its cache.
+
+Gotcha: consistent hashing minimises cache churn when replicas scale up/down (only a fraction of keys remap), which plain modulo hashing does not — a scale event with modulo hashing invalidates nearly every cache entry.`},{front:"Backpressure, queueing, and load shedding",back:`Under overload, a serving system must degrade gracefully rather than collapse.
+
+Backpressure: signal upstream to slow down when queues fill. Load shedding: proactively REJECT excess requests (with a fast error or fallback) to protect latency for the rest.
+
+Why shed load: an unbounded queue means every request eventually times out — better to serve 90% well and fast-fail 10% than to serve 100% past the deadline.
+
+Admission control: reject early, before expensive feature fetches and GPU work are spent on a request that will time out anyway.
+
+Gotcha: a request already past its deadline should be dropped, not served — completing it wastes capacity and helps no one.`},{front:"Rate limiting and quotas",back:`Capping request rate per client/tenant to protect the service and ensure fair sharing.
+
+Algorithms: token bucket (allows bursts up to a cap, refills at a steady rate) and leaky bucket (smooths to a constant rate). Token bucket is the common default.
+
+Why ML services need it: inference is expensive, and one abusive or buggy caller can exhaust GPU capacity for everyone. Quotas also bound cost.
+
+Gotcha: rate limits must be enforced at admission (cheaply), before feature fetch and inference. Enforcing them after the expensive work defeats the purpose. For LLMs, limit by TOKENS, not requests — requests vary wildly in cost.`},{front:"Batch (offline) inference at scale",back:`Scoring a large dataset on a schedule rather than per request — the cheapest way to serve when freshness allows.
+
+How: distributed compute (Spark, Ray, Beam) partitions the data and runs the model across many workers; results are written to a store and served by lookup.
+
+Why far cheaper than online: perfect batching and GPU utilisation, no latency SLO, no idle capacity, and trivial retries.
+
+When it fits: the input space is enumerable and predictions stay valid for hours (daily churn scores, precomputed recommendations).
+
+Gotcha: the offline scoring code must use the SAME features and preprocessing as any online path, or you get skew between the precomputed predictions and freshly computed ones.`},{front:"Hardware selection: CPU vs GPU vs TPU vs accelerators",back:`CPU: cheap, ubiquitous, best for small models and low QPS where a GPU would sit idle. GPU: massively parallel, wins on large models and high batch throughput. TPU: optimised for large dense matmuls (big training, some serving). Inference accelerators (Inferentia, etc.): cost-optimised for serving specific model classes.
+
+Decision drivers: model size, batch-ability, QPS, and latency SLO. A small model at low QPS is often CHEAPER on CPU because the GPU cannot be kept busy.
+
+Gotcha: benchmark on YOUR model and traffic. Vendor throughput numbers assume large batches and ideal shapes you may never hit in a latency-bound service.`},{front:"Autoscaling ML services — the right signal",back:`CPU utilisation, the default autoscaling signal, is a poor proxy for a GPU service — it can be low while the GPU is saturated.
+
+Better signals: GPU utilisation, request concurrency, queue depth, or inference latency against the SLO.
+
+ML-specific complications: slow cold starts (model loading), expensive/scarce GPU nodes, and large fixed memory footprints.
+
+Tactics: keep a warm pool for baseline load and burst on top; scale on queue depth so you add capacity before latency degrades; use stabilisation windows to avoid thrashing; and a readiness probe that passes only after the model loads.
+
+Gotcha: scaling down aggressively then hitting a traffic spike incurs cold-start latency — smooth the scale-down.`},{front:"Cost optimisation levers for inference",back:`Where the money goes and how to cut it: (1) raise UTILISATION — batching and multi-tenancy so paid hardware is not idle (idle GPU time is the classic waste); (2) SMALLER models — quantise, distil, prune; (3) move ONLINE work to BATCH where freshness allows (orders of magnitude cheaper); (4) right-size HARDWARE (CPU for small/low-QPS); (5) CACHE repeated inputs; (6) spot/preemptible instances for fault-tolerant batch jobs.
+
+Biggest structural win: precompute in batch instead of per-request whenever the prediction stays valid for hours.
+
+Gotcha: scale-to-zero cuts idle cost but adds cold-start latency — a direct cost/latency trade to make deliberately, not by accident.`},{front:"Tensor, pipeline, and data parallelism for serving large models",back:`When a model is too big for one device, split it.
+
+Tensor parallelism: split individual layers ACROSS GPUs (each holds a slice of the weights), needing high-bandwidth interconnect for per-layer all-reduces. Pipeline parallelism: put different LAYERS on different GPUs and stream microbatches through, keeping stages busy. Data parallelism: replicate the whole model, split the BATCH — this scales throughput, not model size.
+
+When each: tensor parallel within a node (fast NVLink); pipeline parallel across nodes; data parallel to add throughput once the model fits.
+
+Gotcha: tensor parallelism's communication cost makes it bandwidth-bound — it needs fast interconnect or the GPUs starve.`},{front:"Precompute vs on-demand (the caching/compute trade)",back:`Precompute predictions or features ahead of time and serve by lookup, versus computing them per request.
+
+Precompute when: the input space is bounded and enumerable, and results stay valid for a while (user embeddings, daily scores, popular-query results). Cheap serving, but stale and storage-heavy.
+
+On-demand when: inputs are unbounded or request-context-dependent (a novel search query, current location), or freshness is critical.
+
+Hybrid is common: precompute the expensive stage (embeddings, candidate sets) in batch, do light request-time work (ranking, filtering) online.
+
+Gotcha: precomputed results need INVALIDATION when the model or features change, or you serve outputs from a retired model.`},{front:"Operator fusion and kernel optimisation",back:`Combining multiple operations into a single GPU kernel to cut memory traffic and launch overhead.
+
+Why it is a big win: GPUs are often MEMORY-bandwidth bound, not compute bound. Each separate op reads inputs from and writes outputs to global memory; fusing (e.g. matmul+bias+activation, or FlashAttention fusing the whole attention block) keeps intermediates in fast on-chip memory and avoids the round-trips.
+
+Where it comes from: compilers (torch.compile, XLA, TensorRT) and hand-written fused kernels.
+
+Gotcha: fusion benefits depend on shapes; tiny tensors are launch-overhead bound (fusion helps a lot), huge ones may already be compute bound (fusion helps less).`},{front:"Speculative decoding (LLM latency)",back:`Speeds up autoregressive LLM generation by using a small "draft" model to propose several tokens, which the large model VERIFIES in a single parallel forward pass.
+
+Why it works: verifying k proposed tokens costs one large-model pass instead of k, and the large model accepts the draft's tokens wherever they match what it would have produced — so output is provably IDENTICAL to normal decoding.
+
+Payoff: often 2-3x fewer large-model passes when the draft is good, with no quality loss.
+
+Gotcha: gains depend on the draft's acceptance rate. A poor draft model is rejected often, wasting its work; the draft must be cheap AND well-aligned with the target.`},{front:"KV cache and continuous batching for LLM serving",back:`KV cache: an LLM stores the keys/values of past tokens so each new token does not recompute attention over the whole prefix — turning generation from quadratic into incremental.
+
+The problem it creates: the cache grows with sequence length and consumes large, variable GPU memory, and requests finish at different times.
+
+Continuous batching (PagedAttention/vLLM): instead of static batches, add and evict requests token-by-token and manage KV cache in paged blocks, keeping the GPU full as sequences of different lengths come and go.
+
+Why it matters: naive static batching wastes the GPU while long sequences finish; continuous batching can multiply throughput several-fold.
+
+Gotcha: KV-cache memory, not compute, is often the LLM serving bottleneck.`},{front:"Federated and privacy-preserving deployment",back:`Federated learning: train across many devices/silos WITHOUT centralising raw data — devices compute updates locally and only aggregates are shared.
+
+Why: privacy, regulation, and data that legally cannot leave a device or region.
+
+Costs and complications: unreliable, heterogeneous clients; non-IID data across clients (each device's data is unrepresentative); communication is the bottleneck; and updates themselves can LEAK information, so differential privacy or secure aggregation is added.
+
+Gotcha: federated does not automatically mean private — model updates can be inverted to reconstruct training data. Privacy requires explicit mechanisms (DP noise, secure aggregation) on top of federation, with their own accuracy cost.`}],w=[{front:"Experiment tracking",back:`Recording every training run's code version, data version, hyperparameters, metrics, and artifacts (MLflow, Weights & Biases, Neptune).
+
+Why it is foundational: ML development is empirical — dozens of runs with small variations. Without tracking you cannot answer "which config produced the best model?" or reproduce a result, and you re-run experiments you already did.
+
+What to log: params, metrics (train and val), the data snapshot reference, the git commit, environment, and the output model.
+
+Gotcha: tracking metrics but not the DATA VERSION and CODE COMMIT makes runs irreproducible — the same logged hyperparameters produced a different model because the data or code differed.`},{front:"Model cards and documentation",back:`A standardised document describing a model: intended use, training data, evaluation results BROKEN DOWN BY SEGMENT, limitations, ethical considerations, and known failure modes.
+
+Why: it communicates a model's appropriate use and risks to people who did not build it, and is increasingly required for governance and compliance.
+
+The key content: per-segment performance. An aggregate accuracy hides that the model is far worse for a subgroup — the model card forces that disclosure.
+
+Gotcha: a model card is only useful if kept current. A card describing v1 while v3 serves is worse than none, because it gives false confidence about behaviour that has changed.`},{front:"Champion/challenger and shadow evaluation",back:`Champion: the model currently serving. Challenger: a candidate run in parallel to prove it is better before promotion.
+
+Modes: SHADOW (challenger scores real traffic, outputs logged not served — validates stability and distribution, but not user impact); A/B (challenger serves a slice — measures real impact). Shadow first for safety, then A/B for effect.
+
+Why: offline metrics do not guarantee production wins, so challengers must be validated on live traffic before promotion.
+
+Gotcha: shadow mode cannot measure business impact (nobody sees the outputs) and doubles inference cost during the shadow period. It is a safety gate, not a substitute for an A/B test.`},{front:"Progressive rollout and feature flags for models",back:`Releasing a new model to a growing fraction of traffic (1% → 5% → 25% → 100%), gated behind a flag that can flip instantly.
+
+Why: limits blast radius, lets health metrics stabilise at each stage, and enables instant rollback by flipping the flag — no redeploy.
+
+Difference from a canary: a canary is specifically the small first stage watched for health; progressive rollout is the whole staged ramp. Feature flags are the mechanism that makes both instant to control.
+
+Gotcha: the flag/config that selects the model is itself production state — version it, audit changes, and ensure a flag flip does not leave caches serving the old model's outputs.`},{front:"Interleaving vs A/B testing for ranking models",back:`A/B: users are split into groups, each group sees one ranker, and you compare aggregate metrics. Interleaving: a SINGLE user sees results MIXED from both rankers, and you measure which ranker's items they prefer.
+
+Why interleaving is powerful for ranking: it controls for the user — the same person judges both rankers on the same query — so it detects differences with far LESS traffic and lower variance than A/B.
+
+Limits: it works for comparing rankings, not for whole-experience or long-term metrics, and it is more complex to implement correctly (fair mixing, unbiased attribution).
+
+Use: interleaving to cheaply screen ranker candidates, A/B to confirm the winner's business impact.`},{front:"Human-in-the-loop and review queues",back:`Routing uncertain or high-stakes predictions to humans instead of auto-deciding.
+
+When: high cost of error (medical, fraud, moderation), low model confidence, OOD inputs, or regulatory requirements for human oversight.
+
+Design: an ABSTENTION threshold — the model acts only when confident enough, otherwise escalates. This trades coverage (fraction auto-handled) against accuracy on what it does handle.
+
+Bonus: human decisions on escalated cases become fresh labels, especially on the hard/uncertain region — active-learning value.
+
+Gotcha: calibrate the confidence used for routing, or you escalate the wrong cases; and design for the human throughput you actually have, or the queue backs up and the "safety net" becomes a bottleneck.`},{front:"Model approval gates and sign-off",back:`Formal checks a model must pass before it can serve: performance thresholds on a trusted holdout, per-segment and fairness checks, latency/size limits, and sometimes human/legal sign-off.
+
+Why: automated retraining will faithfully promote a WORSE model trained on contaminated data unless a gate blocks it. Gates make promotion a validated event, not an automatic one.
+
+Where in CI/CD: after training, before deployment — the gate is code, evaluated against a held-out set the training never saw.
+
+Gotcha: gating only on AGGREGATE metrics lets a per-segment regression through. Include segment-level and guardrail checks, and compare against the CURRENT champion, not an absolute bar.`},{front:"Audit trails and compliance (right to explanation, model risk)",back:`Regulated domains (credit, insurance, hiring, healthcare) require that automated decisions be explainable, contestable, and auditable.
+
+What it demands: log which model/version made each decision and on what inputs; produce a human-readable reason for adverse decisions (adverse action notices); retain records; and manage model risk (validation, documentation, monitoring) under frameworks like SR 11-7.
+
+Technical implications: prediction logging with model lineage, explainability (SHAP for reason codes), and versioned governance.
+
+Gotcha: SHAP shows what the MODEL used, not causal reasons — legally you must be careful that "reasons" given are defensible. And you cannot explain a decision if you did not log the exact model and features that produced it.`},{front:"Fairness and bias monitoring in production",back:`A model fair at launch can become unfair as data drifts, so fairness is a monitoring concern, not just a training-time check.
+
+Metrics (which conflict): demographic parity (equal positive rates across groups), equalised odds (equal TPR/FPR across groups), calibration within groups. You generally cannot satisfy all simultaneously — an IMPOSSIBILITY result forces a choice of which to prioritise.
+
+Monitor: per-group performance and outcome rates over time, alerting on divergence.
+
+Gotchas: you need group labels to measure fairness, which may be sensitive or unavailable; and optimising one fairness metric can worsen another, so the choice must be explicit and justified, not implicit.`},{front:"PII handling and access control in ML systems",back:`Training data and features often contain personal data, creating obligations across the whole lifecycle.
+
+Practices: minimise and mask PII in features; encrypt at rest and in transit; access controls on feature stores, training data, and prediction logs; and redact PII from logs (a common leak — features and prompts logged for debugging contain personal data).
+
+Regulatory hooks: purpose limitation (data used only for stated purposes), retention limits, and data-subject rights.
+
+Gotcha: PII can be MEMORISED by models and regurgitated (especially LLMs), so "the raw data is secured" is not enough — the model itself can leak training data. And prediction/feature logs are an often-overlooked PII store.`},{front:"Right to be forgotten and machine unlearning",back:`Regulations grant individuals the right to have their data deleted — but a trained model has already ABSORBED that data into its weights.
+
+The problem: deleting the row from the database does not remove its influence on the model, and models can memorise and regurgitate specific training examples.
+
+Approaches: retrain from scratch without the data (correct but expensive), approximate UNLEARNING methods that adjust the model to remove a sample's influence, or architectures designed for efficient deletion (sharded training so only affected shards retrain).
+
+Gotcha: proving a sample's influence is truly gone is hard, and frequent deletion requests make full retraining impractical — this is an active, unsolved area teams must plan for, not assume away.`},{front:"Model supply-chain security and provenance",back:`Models, like software, have a supply chain that can be attacked: pretrained weights from public hubs, training data, and dependencies.
+
+Threats: a POISONED pretrained model or dataset (backdoor triggered by a specific input), a malicious model file that executes code on load (pickle deserialisation is a known vector), and compromised dependencies.
+
+Defences: verify provenance and checksums of downloaded weights, prefer safe serialisation formats (safetensors over pickle), scan and pin dependencies, and control who can register/promote models.
+
+Gotcha: loading an untrusted model artifact can execute arbitrary code — treat model files from external sources as untrusted executables, not inert data.`},{front:"Adversarial robustness in production",back:`Deployed models face inputs crafted to fool them: adversarial examples (small perturbations flipping the prediction), evasion (spammers/fraudsters adapting to the model), and prompt injection for LLMs.
+
+Why it is a deployment concern: a static model against ADAPTIVE adversaries degrades as they learn its blind spots — this is concept drift driven by an opponent, requiring frequent retraining.
+
+Defences: adversarial training, input validation and anomaly/OOD detection, rate limiting to slow probing, ensembles, and keeping model details private to raise the attacker's cost.
+
+Gotcha: exposing confidence scores or detailed outputs helps attackers optimise against you — there is a trade-off between transparency and robustness.`},{front:"Model deprecation and retirement",back:`Retiring an old model version safely — often overlooked until it causes an incident.
+
+What it involves: confirming no traffic still routes to it, checking no downstream system stored/depends on its outputs, retaining the artifact and metadata for audit even after retirement, and cleaning up its serving resources.
+
+Why it matters: "zombie" models keep serving forgotten traffic, or a cache/precompute table keeps returning a retired model's predictions long after it was "turned off."
+
+Gotcha: you may need to KEEP a retired model's artifact and lineage for compliance/audit even though it no longer serves — deletion and deprecation are different. And rollback requires the previous artifact to still exist, so do not delete N-1 when shipping N.`}],k=[{front:"TTFT vs TPOT — the two LLM latency metrics",back:`Autoregressive generation has two distinct latencies. TTFT (Time To First Token): how long until the first token appears — dominated by the PREFILL of the prompt. TPOT (Time Per Output Token): the steady-state rate of subsequent tokens, dominated by DECODE.
+
+Why split them: they have different bottlenecks and matter differently. TTFT drives perceived responsiveness (and grows with prompt length); TPOT drives how fast the answer streams out.
+
+Optimisation differs: TTFT is compute-bound on the prompt (helped by prefill optimisation, shorter prompts); TPOT is memory-bandwidth bound per token (helped by quantisation, batching, speculative decoding).
+
+Gotcha: reporting a single "latency" for an LLM hides which half is slow — a long prompt kills TTFT even when TPOT is fine.`},{front:"Streaming responses (SSE) for LLMs",back:`Tokens are streamed to the client as they are generated (Server-Sent Events or chunked HTTP) rather than waiting for the full response.
+
+Why: total generation can take seconds, but streaming shows the first token in a fraction of that (TTFT), so perceived latency collapses even though total time is unchanged.
+
+Implications for infra: connections are long-lived (affects load balancing, timeouts, and connection limits), and you must handle mid-stream cancellation (user stops, so stop generating and free the GPU slot).
+
+Gotcha: output validation/guardrails are harder when streaming — you have already sent tokens before you can check the whole output. Either buffer for validation (losing the latency win) or validate incrementally.`},{front:"RAG serving architecture",back:`Retrieval-Augmented Generation: at request time, retrieve relevant documents (vector search over an index) and inject them into the prompt so the LLM answers from current, specific knowledge.
+
+Why: grounds the model in up-to-date, proprietary, or citable facts without retraining, and reduces hallucination.
+
+Serving pieces: an embedding model, a vector database (ANN search), a retriever/re-ranker, and the LLM — a multi-stage inference pipeline with its own latency budget per stage.
+
+Gotchas: retrieval QUALITY caps answer quality (garbage retrieved → confident wrong answer); the index must be kept fresh; and stuffing too many documents blows the context window and TTFT. Retrieval is usually the failure point, not the LLM.`},{front:"Vector databases in production",back:`Stores embeddings and serves approximate nearest-neighbour search for retrieval/semantic-search.
+
+Production concerns: ANN index type (HNSW: fast, memory-heavy; IVF/PQ: compressed, some recall loss), recall-vs-latency tuning (efSearch/nprobe), and index FRESHNESS — new documents are invisible until indexed.
+
+Operational realities: rebuilding/updating indexes at scale, metadata filtering combined with vector search, and sharding as the corpus grows.
+
+Gotcha: if you re-embed with a new embedding model, EVERY vector must be recomputed and the whole index rebuilt — embeddings from different models are not comparable. Plan embedding-model upgrades as full reindex migrations.`},{front:"Semantic caching for LLMs",back:`Caching LLM responses keyed by the MEANING of the query (embedding similarity) rather than exact string match, so paraphrased repeats hit the cache.
+
+Why: LLM calls are expensive and slow, and many queries are near-duplicates. An exact-match cache misses "reset my password" vs "how do I reset password"; a semantic cache catches both.
+
+How: embed the query, find a cached entry within a similarity threshold, return it.
+
+Gotchas: the similarity threshold is a precision/recall trade — too loose returns a wrong cached answer for a subtly different question (dangerous); too tight and hit rate collapses. And cached answers can go stale if the underlying knowledge changed. Not safe for personalised or context-dependent responses.`},{front:"Guardrails and output validation for LLMs",back:`Checks around an LLM to constrain inputs and outputs: input filters (prompt-injection, PII, disallowed content), and output validation (format/schema conformance, toxicity, factuality, policy).
+
+Why: LLMs are non-deterministic and can produce harmful, malformed, or off-policy output. Downstream systems expecting valid JSON break when the model emits prose.
+
+Approaches: schema-constrained decoding (force valid JSON), classifier guardrails on input/output, regex/rule validators, and a second LLM as a judge.
+
+Gotchas: guardrails add latency and can be bypassed (jailbreaks); constrained decoding guarantees format but not correctness; and streaming makes output validation hard because tokens are sent before the full output can be checked.`},{front:"Prompt versioning and management",back:`Treating prompts as versioned, tested artifacts — not strings hardcoded in application code.
+
+Why: a prompt is effectively model configuration that strongly determines behaviour. Changing it changes outputs, so it needs versioning, review, testing, and the ability to roll back — exactly like model weights.
+
+Practices: store prompts in a registry with versions, evaluate a prompt change against a test set before shipping, and log which prompt version produced each output.
+
+Gotcha: teams edit prompts casually in code and ship untested changes that silently shift behaviour across every user. And a prompt tuned for one model version can degrade when the underlying model is updated — prompt and model version are coupled.`},{front:"LLM evaluation in production",back:`Measuring LLM output quality, which is hard because there is usually no single correct answer.
+
+Approaches: reference-based metrics (weak for open-ended text), LLM-AS-JUDGE (another model scores outputs against a rubric — scalable but has its own biases), human evaluation (gold standard, expensive), and task-specific checks (did the extracted JSON match, did the code run).
+
+Production signals: user feedback (thumbs, edits, regenerations), task success rates, and guardrail trigger rates.
+
+Gotchas: LLM judges are biased (favour longer answers, their own style, position) and must themselves be validated against humans; and offline eval sets go stale as usage patterns shift. Build a living eval set from real traffic.`},{front:"Hallucination monitoring and mitigation",back:`Hallucination: an LLM producing fluent, confident, and FALSE content.
+
+Why it is hard operationally: the output looks correct, so it passes casual review; and the model gives no reliable internal signal of when it is fabricating.
+
+Mitigations: RAG grounding (answer from retrieved sources), citation/attribution (force claims to reference provided context), constrained tasks, and lower temperature for factual work.
+
+Monitoring: factuality checks against sources, groundedness scoring (is the answer supported by retrieved context?), and user-correction signals.
+
+Gotcha: RAG reduces but does not eliminate hallucination — the model can still ignore or misread retrieved context, or confidently answer when retrieval returned nothing relevant. Detecting "should have abstained" is the hard part.`},{front:"Token cost management",back:`LLM cost scales with TOKENS (input + output), so cost control means token control.
+
+Levers: shorter prompts (trim boilerplate, retrieve fewer/better documents), cap output length, cache (exact and semantic), route easy queries to smaller/cheaper models, and batch where latency allows.
+
+Why prompt length matters doubly: long prompts cost input tokens AND raise TTFT (more prefill), so bloated context hurts both cost and latency.
+
+Monitoring: track tokens per request by route/feature, not just request counts — one feature with huge contexts can dominate the bill.
+
+Gotcha: rate-limit and quota by TOKENS, not requests — requests vary 100x in cost, so a request-based limit lets an expensive caller blow the budget.`},{front:"Model gateway and multi-provider routing",back:`A gateway/proxy in front of one or more LLM providers that centralises routing, retries, fallback, rate limiting, caching, logging, and cost tracking.
+
+Why: decouples application code from specific providers, enables failover when a provider is down or rate-limits you, and lets you route by cost/quality (cheap model for easy tasks, strong model for hard ones).
+
+What it centralises: auth/keys, per-team quotas, prompt/response logging, and observability across providers.
+
+Gotchas: providers differ in APIs, tokenisation, and behaviour, so "just switch providers" changes outputs — the gateway abstracts the interface, not the behaviour. And the gateway itself becomes a critical single point of failure that must be highly available.`},{front:"Retries, timeouts, and fallbacks for LLM calls",back:`LLM APIs are slow, rate-limited, and occasionally fail, so robust calling logic is essential.
+
+Patterns: timeouts sized to expected generation length (a streaming call can legitimately take many seconds); retries with EXPONENTIAL BACKOFF and jitter on rate limits/5xx; a circuit breaker to stop hammering a failing provider; and fallbacks (a cheaper model, a cached answer, or a graceful degraded response).
+
+Gotchas: naive retries on a timeout can DOUBLE-charge you (the first call may still complete server-side) and amplify load during an outage; retrying a non-idempotent action (an agent that took a side effect) repeats the side effect. Make retried operations idempotent, and back off aggressively during provider incidents.`},{front:"Context window management",back:`LLMs have a bounded context; prompts plus retrieved content plus history must fit, and cost/latency rise with length.
+
+Strategies: truncation (drop oldest), summarisation of history, retrieval of only the most relevant chunks rather than everything, and sliding windows for long conversations.
+
+The "lost in the middle" effect: models attend most to the START and END of context and can MISS information buried in the middle — so ordering matters, not just fitting.
+
+Gotchas: simply using a bigger context window is not free — it raises cost and TTFT and can DILUTE attention, sometimes lowering answer quality. More context is not automatically better; relevant, well-ordered context is.`},{front:"Prompt injection and LLM input security",back:`Prompt injection: malicious instructions embedded in the input (or in retrieved/tool-returned content) that hijack the model — "ignore previous instructions and..."
+
+Why it is dangerous in deployed systems: an LLM with tools or data access can be tricked into exfiltrating data, misusing tools, or bypassing policy. INDIRECT injection (poisoned content the model retrieves, e.g. a web page or document) is especially insidious — the attack rides in on data, not the user's message.
+
+Defences: treat all retrieved/tool content as untrusted, separate instructions from data, least-privilege tool access, output filtering, and human confirmation for high-impact actions.
+
+Gotcha: there is no complete fix — injection is an open problem, so design for LEAST PRIVILEGE and assume the model can be manipulated.`},{front:"Fine-tuning vs RAG vs prompting in production",back:`Three ways to adapt an LLM, with different operational profiles.
+
+PROMPTING: fastest to change, no training, but limited by context window and cost per call. RAG: injects fresh/proprietary knowledge at query time, updates by re-indexing (no retraining), best for factual grounding. FINE-TUNING: bakes in behaviour/style/format, cheaper per call (shorter prompts), but needs training data and a retrain to update, and can degrade general ability.
+
+Decision heuristic: prompt first; add RAG for knowledge and grounding; fine-tune for consistent format/behaviour or to cut per-call cost at scale. They COMBINE — fine-tune for behaviour, RAG for facts.
+
+Gotcha: fine-tuning to add KNOWLEDGE is often the wrong tool — it is expensive, stale immediately, and hallucination-prone; RAG fits knowledge better.`}],T={deck:"ML Deployment (MLOps)",cards:[...f,...g,...y,...b,...v,...w,...k]},E={deck:"Recommendation Systems",cards:[{front:"Collaborative filtering — user-based vs item-based",back:`Recommend using behaviour patterns across users, with no content features at all. User-based: find similar users, recommend what they liked. Item-based: find items co-liked by the same users.
 
 Under the hood: item-based is usually preferred in production because item-item similarities are far more stable over time than user tastes, so they can be precomputed and cached.
 
@@ -1398,4 +1944,4 @@ Online: CTR is the tempting default but is short-term and clickbait-prone. Prefe
 
 Guardrails: catalogue coverage/Gini, share of impressions to the head, latency p99, and per-segment metrics to catch Simpson-style reversals.
 
-Rule of thumb: if a change raises CTR while lowering coverage and diversity, you have probably strengthened the feedback loop rather than the product.`}]},n=[m,p,f,g],y=n.reduce((e,t)=>e+t.cards.length,0);function b(){return n.flatMap(e=>e.cards.map(t=>({deck:e.deck,front:t.front,back:t.back})))}export{y as STARTER_CARD_COUNT,n as STARTER_DECKS,b as starterCards};
+Rule of thumb: if a change raises CTR while lowering coverage and diversity, you have probably strengthened the feedback loop rather than the product.`}]},n=[m,p,T,E],A=n.reduce((e,t)=>e+t.cards.length,0);function x(){return n.flatMap(e=>e.cards.map(t=>({deck:e.deck,front:t.front,back:t.back})))}export{A as STARTER_CARD_COUNT,n as STARTER_DECKS,x as starterCards};
