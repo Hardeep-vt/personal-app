@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useAuth } from '../../context/useAuth'
 import { markFlashcardsReviewed } from '../../services/sheets'
+import { parseBack, labelTone, TONES, deckAccent } from './cardFormat'
 
 function shuffle(arr) {
   const out = [...arr]
@@ -21,6 +22,8 @@ export default function ReviewSession({ deck, cards, onExit }) {
 
   const current = queue[0]
   const done = queue.length === 0
+  const accent = deckAccent(deck)
+  const blocks = useMemo(() => parseBack(current?.back), [current?.back])
 
   function handleAgain() {
     setAgainCount(c => c + 1)
@@ -78,29 +81,53 @@ export default function ReviewSession({ deck, cards, onExit }) {
         <span className="text-gray-500 text-xs">{remaining} left</span>
       </div>
 
-      <div className="h-1 bg-gray-800 rounded-full mb-5 overflow-hidden">
-        <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+      <div className="h-1 bg-gray-800 rounded-full mb-4 overflow-hidden">
+        <div className={`h-full ${accent.bar} transition-all duration-300`} style={{ width: `${progress}%` }} />
       </div>
 
       {/* The card scrolls inside its own box so the answer buttons stay reachable
           however long the card is. min-h-full on the inner button keeps short cards
           vertically centred without clipping long ones. */}
-      <div className="flex-1 min-h-0 w-full bg-gray-800 rounded-2xl overflow-y-auto overscroll-contain">
+      <div className={`flex-1 min-h-0 w-full bg-gray-800 rounded-2xl border ${accent.ring} overflow-y-auto overscroll-contain`}>
         <button
           onClick={() => setFlipped(f => !f)}
-          className="w-full min-h-full px-5 py-7 flex flex-col items-center justify-center gap-3 active:bg-gray-700 transition-colors"
+          className={`w-full min-h-full px-5 py-6 flex flex-col gap-4 active:bg-gray-700 transition-colors ${
+            flipped ? 'justify-start text-left' : 'justify-center items-center'
+          }`}
         >
-          <span className={`text-[10px] font-semibold uppercase tracking-wider ${flipped ? 'text-amber-400' : 'text-gray-600'}`}>
-            {flipped ? 'Back' : 'Front'}
-          </span>
-          {/* Answers are multi-paragraph prose, so they read far better left-aligned;
-              questions are short and look better centred. */}
-          <p className={`text-white whitespace-pre-wrap ${
-            flipped ? 'text-base leading-relaxed text-left w-full' : 'text-lg leading-relaxed text-center'
-          }`}>
-            {flipped ? current.back : current.front}
-          </p>
-          {!flipped && <span className="text-gray-600 text-xs mt-2">Tap to reveal</span>}
+          {flipped ? (
+            <div className="w-full space-y-3.5">
+              {blocks.map((block, i) => {
+                const tone = block.label ? TONES[labelTone(block.label)] : null
+                return (
+                  <div key={i} className={tone ? `border-l-2 ${tone.bar} pl-3` : ''}>
+                    {block.label && (
+                      <div className={`text-[11px] font-bold uppercase tracking-wider mb-1 ${tone.label}`}>
+                        {block.label}
+                      </div>
+                    )}
+                    <p className={`whitespace-pre-wrap leading-relaxed ${
+                      i === 0 && !block.label
+                        ? 'text-white text-[17px] font-medium'
+                        : 'text-gray-300 text-[15px]'
+                    }`}>
+                      {block.body}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <>
+              <span className={`text-[10px] font-bold uppercase tracking-widest ${accent.text}`}>
+                {deck}
+              </span>
+              <p className="text-white text-2xl font-semibold leading-snug text-center whitespace-pre-wrap">
+                {current.front}
+              </p>
+              <span className="text-gray-600 text-xs mt-1">Tap to reveal</span>
+            </>
+          )}
         </button>
       </div>
 
