@@ -59,6 +59,7 @@ export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id'
         { properties: { title: 'habit_completions' } },
         { properties: { title: 'journal_metrics' } },
         { properties: { title: 'journal_entries' } },
+        { properties: { title: 'flashcards' } },
       ],
     }),
   })
@@ -71,7 +72,7 @@ export async function getOrCreateSpreadsheet(name, storageKey = 'spreadsheet_id'
 async function ensureSheets(spreadsheetId) {
   const meta = await req(`${BASE}/${spreadsheetId}`)
   const existing = meta.sheets.map(s => s.properties.title)
-  const needed = ['people', 'interactions', 'meal_times', 'trash', 'calendar_events', 'recurring_templates', 'habit_completions', 'journal_metrics', 'journal_entries']
+  const needed = ['people', 'interactions', 'meal_times', 'trash', 'calendar_events', 'recurring_templates', 'habit_completions', 'journal_metrics', 'journal_entries', 'flashcards']
   const toCreate = needed.filter(n => !existing.includes(n))
   if (toCreate.length > 0) {
     await req(`${BASE}/${spreadsheetId}:batchUpdate`, {
@@ -88,6 +89,7 @@ async function ensureSheets(spreadsheetId) {
     if (toCreate.includes('habit_completions')) await writeHabitCompletionHeaders(spreadsheetId)
     if (toCreate.includes('journal_metrics')) await writeJournalMetricsHeaders(spreadsheetId)
     if (toCreate.includes('journal_entries')) await writeJournalEntriesHeaders(spreadsheetId)
+    if (toCreate.includes('flashcards')) await writeFlashcardHeaders(spreadsheetId)
   }
   await ensureFoodMacroHeaders(spreadsheetId)
   await ensureCalendarEventHeaders(spreadsheetId)
@@ -177,6 +179,13 @@ async function writeJournalEntriesHeaders(spreadsheetId) {
   })
 }
 
+async function writeFlashcardHeaders(spreadsheetId) {
+  await req(`${BASE}/${spreadsheetId}/values/flashcards!A1:G1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [['id', 'deck', 'front', 'back', 'created_at', 'last_reviewed', 'review_count']] }),
+  })
+}
+
 async function writeMealTimesHeaders(spreadsheetId) {
   await req(`${BASE}/${spreadsheetId}/values/meal_times!A1:C1?valueInputOption=RAW`, {
     method: 'PUT',
@@ -210,6 +219,7 @@ async function writeHeaders(spreadsheetId) {
     { range: 'habit_completions!A1', values: [['template_id', 'date', 'status', 'updated_at']] },
     { range: 'journal_metrics!A1', values: [['id', 'name', 'type', 'unit', 'sort_order', 'active']] },
     { range: 'journal_entries!A1', values: [['id', 'date', 'metric_id', 'value', 'updated_at']] },
+    { range: 'flashcards!A1', values: [['id', 'deck', 'front', 'back', 'created_at', 'last_reviewed', 'review_count']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST',
@@ -413,6 +423,81 @@ export async function setJournalEntry(spreadsheetId, metricId, date, value) {
   const row = [rows[idx]?.id || genId(), date, metricId, value, new Date().toISOString()]
   if (idx !== -1) await updateRow(spreadsheetId, 'journal_entries', idx, row)
   else await appendRow(spreadsheetId, 'journal_entries', row)
+}
+
+// --- flashcards ---
+
+export async function getFlashcards(spreadsheetId) {
+  return getRows(spreadsheetId, 'flashcards')
+}
+
+export async function createFlashcard(spreadsheetId, { deck, front, back }) {
+  const row = [genId(), deck, front, back, new Date().toISOString(), '', '0']
+  await appendRow(spreadsheetId, 'flashcards', row)
+}
+
+// Appends many cards in one request — used for bulk-pasting a deck.
+export async function createFlashcards(spreadsheetId, cards) {
+  const stamp = new Date().toISOString()
+  const rows = cards.map(c => [genId(), c.deck, c.front, c.back, stamp, '', '0'])
+  await req(`${BASE}/${spreadsheetId}/values/flashcards!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+    method: 'POST',
+    body: JSON.stringify({ values: rows }),
+  })
+}
+
+export async function updateFlashcard(spreadsheetId, rowIndex, row) {
+  await updateRow(spreadsheetId, 'flashcards', rowIndex, [
+    row.id, row.deck, row.front, row.back, row.created_at || '', row.last_reviewed || '', String(row.review_count ?? 0),
+  ])
+}
+
+// Stamps last_reviewed / review_count for every card seen in a session, in one batch
+// write at the end of the session rather than a request per card.
+export async function markFlashcardsReviewed(spreadsheetId, cardIds) {
+  if (cardIds.length === 0) return
+  const rows = await getFlashcards(spreadsheetId)
+  const stamp = new Date().toISOString()
+  const data = []
+  rows.forEach((row, i) => {
+    if (!cardIds.includes(row.id)) return
+    const sheetRow = i + 2
+    data.push({
+      range: `flashcards!A${sheetRow}:G${sheetRow}`,
+      values: [[row.id, row.deck, row.front, row.back, row.created_at || '', stamp, String((parseInt(row.review_count, 10) || 0) + 1)]],
+    })
+  })
+  if (data.length === 0) return
+  await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({ valueInputOption: 'RAW', data }),
+  })
+}
+
+export async function deleteFlashcard(spreadsheetId, cardId) {
+  const rows = await getFlashcards(spreadsheetId)
+  const idx = rows.findIndex(r => r.id === cardId)
+  if (idx === -1) return
+  await softDeleteRow(spreadsheetId, 'flashcards', idx, rows[idx])
+}
+
+// Renames a deck across every card belonging to it.
+export async function renameFlashcardDeck(spreadsheetId, oldDeck, newDeck) {
+  const rows = await getFlashcards(spreadsheetId)
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].deck === oldDeck) {
+      await updateFlashcard(spreadsheetId, i, { ...rows[i], deck: newDeck })
+    }
+  }
+}
+
+// Deletes every card in a deck. Iterates back-to-front so earlier row indices stay valid.
+export async function deleteFlashcardDeck(spreadsheetId, deck) {
+  const rows = await getFlashcards(spreadsheetId)
+  const targets = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.deck === deck).sort((a, b) => b.i - a.i)
+  for (const { r, i } of targets) {
+    await softDeleteRow(spreadsheetId, 'flashcards', i, r)
+  }
 }
 
 // --- Drive backups ---

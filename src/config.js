@@ -26,6 +26,7 @@ export const SHEETS = {
   HABIT_COMPLETIONS: 'habit_completions',
   JOURNAL_METRICS: 'journal_metrics',
   JOURNAL_ENTRIES: 'journal_entries',
+  FLASHCARDS: 'flashcards',
 }
 
 export const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

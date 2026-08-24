@@ -715,7 +715,7 @@ export default function FoodTab() {
 
       <button
         onClick={() => openAddForm('Breakfast')}
-        className="fixed bottom-20 right-4 w-12 h-12 bg-indigo-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform z-40"
+        className="fixed bottom-6 right-4 w-12 h-12 bg-indigo-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform z-40"
       >
         +
       </button>

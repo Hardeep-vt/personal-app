@@ -174,7 +174,7 @@ export default function NotesTab() {
 
       <button
         onClick={() => setEditing({ id: 'new', title: '', body: '', tags: '' })}
-        className="fixed bottom-20 right-4 w-12 h-12 bg-violet-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+        className="fixed bottom-6 right-4 w-12 h-12 bg-violet-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform"
       >
         +
       </button>

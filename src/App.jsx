@@ -6,18 +6,29 @@ import FoodTab from './components/food/FoodTab'
 import ExerciseTab from './components/exercise/ExerciseTab'
 import LifeTab from './components/life/LifeTab'
 import CalendarTab from './components/calendar/CalendarTab'
+import FlashcardsTab from './components/flashcards/FlashcardsTab'
 import usePullToRefresh from './hooks/usePullToRefresh'
 
-const TABS = [
+const SECTIONS = [
   { id: 'calendar', label: 'Calendar', icon: '📅' },
   { id: 'food', label: 'Food', icon: '🥗' },
   { id: 'exercise', label: 'Exercise', icon: '💪' },
   { id: 'life', label: 'Life', icon: '📋' },
+  { id: 'flashcards', label: 'Flashcards', icon: '🗂️' },
 ]
+
+const SECTION_KEY = 'active_section'
 
 function AppInner() {
   const { status, signIn, signOut, error, sandboxMode, toggleSandbox } = useAuth()
-  const [activeTab, setActiveTab] = useState('calendar')
+  // Reopen on whichever section was last used, rather than always landing on Calendar.
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem(SECTION_KEY)
+    return SECTIONS.some(s => s.id === saved) ? saved : 'calendar'
+  })
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  useEffect(() => { localStorage.setItem(SECTION_KEY, activeTab) }, [activeTab])
 
   // Handle redirect back from Whoop OAuth
   useEffect(() => {
@@ -59,7 +70,7 @@ function AppInner() {
         <div className="text-center">
           <div className="text-5xl mb-4">📋</div>
           <h1 className="text-2xl font-semibold text-white mb-2">MyApp</h1>
-          <p className="text-gray-400 text-sm">Your personal tracker — food, exercise, life & calendar</p>
+          <p className="text-gray-400 text-sm">Your personal tracker — calendar, food, exercise, life & flashcards</p>
         </div>
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         <button
@@ -81,13 +92,25 @@ function AppInner() {
     exercise: <ExerciseTab key={refreshKey} />,
     life: <LifeTab key={refreshKey} onJumpToCalendar={jumpToCalendar} />,
     calendar: <CalendarTab key={refreshKey} jumpDate={calendarJumpDate} onJumpHandled={() => setCalendarJumpDate(null)} />,
+    flashcards: <FlashcardsTab key={refreshKey} />,
   }
+
+  const activeSection = SECTIONS.find(s => s.id === activeTab)
 
   return (
     <div className="flex flex-col min-h-svh">
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-        <div className="flex items-center gap-2">
-          <span className="text-white font-semibold text-lg">MyApp</span>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+            className="text-gray-300 active:text-white text-xl leading-none -ml-1 px-1"
+          >
+            ☰
+          </button>
+          <span className="text-white font-semibold text-lg">
+            {activeSection?.icon} {activeSection?.label}
+          </span>
           {sandboxMode && (
             <span className="bg-amber-500/20 text-amber-400 text-[10px] font-semibold px-1.5 py-0.5 rounded">SANDBOX</span>
           )}
@@ -123,24 +146,44 @@ function AppInner() {
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto overscroll-contain pb-24">
+      <main className="flex-1 overflow-y-auto overscroll-contain pb-8">
         {tabContent[activeTab]}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex safe-area-inset-bottom">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex flex-col items-center gap-1 py-3 text-sm transition-colors ${
-              activeTab === tab.id ? 'text-indigo-400' : 'text-gray-500'
-            }`}
-          >
-            <span className="text-3xl leading-none">{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <div
+            onClick={() => setMenuOpen(false)}
+            className="absolute inset-0 bg-black/60"
+          />
+          <nav className="relative w-64 max-w-[75vw] bg-gray-900 border-r border-gray-800 flex flex-col py-4 safe-area-inset-bottom">
+            <div className="flex items-center justify-between px-4 pb-3 mb-2 border-b border-gray-800">
+              <span className="text-white font-semibold">MyApp</span>
+              <button
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close menu"
+                className="text-gray-500 active:text-white text-lg leading-none px-1"
+              >
+                ✕
+              </button>
+            </div>
+            {SECTIONS.map(section => (
+              <button
+                key={section.id}
+                onClick={() => { setActiveTab(section.id); setMenuOpen(false) }}
+                className={`flex items-center gap-3 px-4 py-3.5 text-left transition-colors ${
+                  activeTab === section.id
+                    ? 'text-indigo-400 bg-indigo-500/10 border-l-2 border-indigo-400'
+                    : 'text-gray-400 active:text-white border-l-2 border-transparent'
+                }`}
+              >
+                <span className="text-2xl leading-none">{section.icon}</span>
+                <span className="text-sm font-medium">{section.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
     </div>
   )
 }

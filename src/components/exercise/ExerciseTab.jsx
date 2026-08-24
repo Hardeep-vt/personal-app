@@ -275,7 +275,7 @@ export default function ExerciseTab() {
 
       <button
         onClick={() => setShowForm(true)}
-        className="fixed bottom-20 right-4 w-12 h-12 bg-emerald-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+        className="fixed bottom-6 right-4 w-12 h-12 bg-emerald-600 text-white rounded-full text-2xl flex items-center justify-center shadow-lg active:scale-95 transition-transform"
       >
         +
       </button>
