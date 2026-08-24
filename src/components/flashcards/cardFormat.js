@@ -20,7 +20,7 @@ const TONE_RULES = [
   ['danger', ['pitfall', 'gotcha', 'trap', 'mistake', 'harm', 'problem', 'weakness', 'limit', 'caveat', 'risk', 'worse', 'tension', 'break', 'fail', 'watch', 'cost', 'not a metric', 'it is not', 'critical rule', 'dying', 'curse']],
   ['fix', ['fix', 'mitigat', 'correct', 'solution', 'handling', 'defence', 'defense', 'practice', 'tactic', 'strateg', 'avoid', 'prevent', 'control', 'treatment', 'guardrail', 'requirement', 'alternativ', 'strength', 'advantage', 'benefit', 'payoff', 'gain', 'use ', 'use:']],
   ['example', ['example', 'classic', 'canonical', 'e.g.']],
-  ['detect', ['detect', 'measure', 'diagnos', 'symptom', 'monitor', 'tell-tale', 'sign', 'test']],
+  ['detect', ['detect', 'measure', 'diagnos', 'symptom', 'monitor', 'tell-tale', 'sign', 'test', 'check', 'verify']],
   ['mechanism', ['under the hood', 'why', 'how', 'insight', 'reason', 'intuition', 'mechanism', 'analytic', 'geometric', 'key', 'crucial', 'critical', 'the hard part', 'deeper', 'implication', 'consequence', 'framing', 'interpretation']],
 ]
 
