@@ -73,6 +73,8 @@ export default function ReviewSession({ deck, cards, onExit }) {
           <div className="w-full space-y-3.5">
             {blocks.map((block, i) => {
               const tone = block.label ? TONES[labelTone(block.label)] : null
+              const isLead = i === 0 && !block.label
+              const textCls = isLead ? 'text-white text-[17px] font-medium' : 'text-gray-300 text-[15px]'
               return (
                 <div key={i} className={tone ? `border-l-2 ${tone.bar} pl-3` : ''}>
                   {block.label && (
@@ -80,13 +82,25 @@ export default function ReviewSession({ deck, cards, onExit }) {
                       {block.label}
                     </div>
                   )}
-                  <p className={`whitespace-pre-wrap leading-relaxed ${
-                    i === 0 && !block.label
-                      ? 'text-white text-[17px] font-medium'
-                      : 'text-gray-300 text-[15px]'
-                  }`}>
-                    {block.body}
-                  </p>
+                  {block.lead && (
+                    <p className={`whitespace-pre-wrap leading-relaxed mb-1.5 ${textCls}`}>{block.lead}</p>
+                  )}
+                  {block.bullets && block.bullets.length > 1 ? (
+                    <ul className="space-y-1">
+                      {block.bullets.map((b, j) => (
+                        <li key={j} className={`flex gap-2 leading-relaxed ${textCls}`}>
+                          <span className={tone ? tone.label : 'text-gray-500'} aria-hidden>•</span>
+                          <span className="flex-1 whitespace-pre-wrap">{b}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    (block.bullets?.[0] || (!block.lead && block.body)) && (
+                      <p className={`whitespace-pre-wrap leading-relaxed ${textCls}`}>
+                        {block.bullets?.[0] || block.body}
+                      </p>
+                    )
+                  )}
                 </div>
               )
             })}

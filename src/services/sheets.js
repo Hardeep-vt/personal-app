@@ -494,6 +494,36 @@ export async function recordFlashcardSwipe(spreadsheetId, cardId, { weight, flag
   })
 }
 
+// Updates the `back` text of cards in a deck to match the bundled deck, matching on
+// question text. Everything else on the row — weight, flag, review counts — is left
+// untouched. Returns how many cards changed. Used by the "Refresh card text" button
+// so edits to the shipped decks reach a sheet that already imported them.
+export async function refreshFlashcardBacks(spreadsheetId, deck, bundleCards) {
+  const backByFront = new Map(bundleCards.map(c => [c.front, c.back]))
+  const rows = await getFlashcards(spreadsheetId)
+  const data = []
+  rows.forEach((row, i) => {
+    if (row.deck !== deck) return
+    const next = backByFront.get(row.front)
+    if (next == null || next === row.back) return
+    const r = i + 2
+    data.push({
+      range: `flashcards!A${r}:I${r}`,
+      values: [[
+        row.id, row.deck, row.front, next, row.created_at || '',
+        row.last_reviewed || '', String(parseInt(row.review_count, 10) || 0),
+        row.weight ?? '1', row.flagged || '',
+      ]],
+    })
+  })
+  if (data.length === 0) return 0
+  await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({ valueInputOption: 'RAW', data }),
+  })
+  return data.length
+}
+
 // Toggles just the flagged column for one card.
 export async function setFlashcardFlag(spreadsheetId, cardId, flagged) {
   const rows = await getFlashcards(spreadsheetId)

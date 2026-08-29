@@ -38,7 +38,7 @@ export default function SwipeCard({ accent, flipped, onSwipe, onTap, children })
   function onPointerDown(e) {
     if (leaving) return
     gesture.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), axis: null }
-    cardRef.current?.setPointerCapture?.(e.pointerId)
+    try { cardRef.current?.setPointerCapture?.(e.pointerId) } catch { /* no active pointer (e.g. synthetic events) */ }
   }
 
   function onPointerMove(e) {

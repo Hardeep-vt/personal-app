@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/useAuth'
 import {
   getFlashcards, createFlashcard, createFlashcards, updateFlashcard,
-  deleteFlashcard, renameFlashcardDeck, deleteFlashcardDeck, setFlashcardFlag, getRows,
+  deleteFlashcard, renameFlashcardDeck, deleteFlashcardDeck, setFlashcardFlag,
+  refreshFlashcardBacks, getRows,
 } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import { deckAccent } from './cardFormat'
@@ -58,6 +59,7 @@ export default function FlashcardsTab() {
   const openReviewed = deckCards.filter(c => c.last_reviewed).length
   const redoCards = deckCards.filter(c => c.flagged === '1')
   const listCards = showRedo && redoCards.length ? redoCards : deckCards
+  const starterForDeck = (starter || []).filter(c => c.deck === openDeck)
 
   async function handleSaveCard() {
     if (!editing?.front?.trim() || !editing?.deck?.trim()) return
@@ -78,6 +80,17 @@ export default function FlashcardsTab() {
       }
       await load()
       setEditing(null)
+    } catch (e) { console.error(e) }
+    setSaving(false)
+  }
+
+  async function handleRefreshBacks() {
+    if (starterForDeck.length === 0) return
+    setSaving(true)
+    try {
+      const n = await refreshFlashcardBacks(spreadsheetId, openDeck, starterForDeck)
+      await load()
+      window.alert(n === 0 ? 'Card text already up to date.' : `Updated the text of ${n} card${n === 1 ? '' : 's'}.`)
     } catch (e) { console.error(e) }
     setSaving(false)
   }
@@ -273,6 +286,11 @@ export default function FlashcardsTab() {
         <div className="flex items-center justify-between mb-1">
           <button onClick={() => { setOpenDeck(null); setShowRedo(false) }} className="text-gray-400 text-sm active:text-white">← Decks</button>
           <div className="flex items-center gap-3">
+            {starterForDeck.length > 0 && (
+              <button onClick={handleRefreshBacks} disabled={saving} className="text-gray-500 text-xs active:text-gray-300 disabled:opacity-50">
+                {saving ? 'Refreshing…' : 'Refresh text'}
+              </button>
+            )}
             <button onClick={handleRenameDeck} className="text-gray-500 text-xs active:text-gray-300">Rename</button>
             <button onClick={handleDeleteDeck} className="text-gray-600 text-xs active:text-red-400">Delete deck</button>
           </div>

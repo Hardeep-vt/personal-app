@@ -40,8 +40,28 @@ function capitaliseBody(body) {
   return body.charAt(0).toUpperCase() + body.slice(1)
 }
 
-// Splits a back into { label, body } blocks. A label is a short capitalised lead-in
-// ending in a colon; anything else is plain body text.
+// Pulls "- " / "• " / "* " lines out of a block into a bullet list, keeping any
+// text before the first bullet as a lead-in. A line that is indented or does not
+// start with a marker is treated as a continuation of the previous bullet.
+function splitBullets(text) {
+  const lines = text.split('\n')
+  const marker = /^\s*[-•*]\s+/
+  if (!lines.some(l => marker.test(l))) return { body: text, lead: null, bullets: null }
+  const lead = []
+  const bullets = []
+  for (const line of lines) {
+    const t = line.trim()
+    if (!t) continue
+    if (marker.test(line)) bullets.push(t.replace(marker, ''))
+    else if (bullets.length === 0) lead.push(t)
+    else bullets[bullets.length - 1] += ' ' + t
+  }
+  return { body: text, lead: lead.join(' ') || null, bullets }
+}
+
+// Splits a back into blocks. A label is a short capitalised lead-in ending in a
+// colon; anything else is plain body text. Each block also carries { lead, bullets }
+// when its body is written as a "- " bullet list.
 export function parseBack(back) {
   return (back || '')
     .split('\n\n')
@@ -49,7 +69,9 @@ export function parseBack(back) {
     .filter(Boolean)
     .map(para => {
       const m = para.match(/^([A-Z][^:\n]{1,44}):\s+([\s\S]+)$/)
-      return m ? { label: m[1], body: capitaliseBody(m[2]) } : { label: null, body: para }
+      const label = m ? m[1] : null
+      const raw = m ? capitaliseBody(m[2]) : para
+      return { label, ...splitBullets(raw) }
     })
 }
 
