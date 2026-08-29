@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/useAuth'
 import {
   getFlashcards, createFlashcard, createFlashcards, updateFlashcard,
-  deleteFlashcard, renameFlashcardDeck, deleteFlashcardDeck, getRows,
+  deleteFlashcard, renameFlashcardDeck, deleteFlashcardDeck, setFlashcardFlag, getRows,
 } from '../../services/sheets'
 import { SHEETS } from '../../config'
 import { deckAccent } from './cardFormat'
@@ -26,6 +26,7 @@ export default function FlashcardsTab() {
   const [bulkText, setBulkText] = useState('')
   const [bulkDeck, setBulkDeck] = useState('')
   const [starter, setStarter] = useState(null)
+  const [showRedo, setShowRedo] = useState(false)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally run once on mount
   useEffect(() => { load() }, [])
@@ -55,6 +56,8 @@ export default function FlashcardsTab() {
   const missingStarter = (starter || []).filter(c => !present.has(cardKey(c))).length
   const openAccent = deckAccent(openDeck || '')
   const openReviewed = deckCards.filter(c => c.last_reviewed).length
+  const redoCards = deckCards.filter(c => c.flagged === '1')
+  const listCards = showRedo && redoCards.length ? redoCards : deckCards
 
   async function handleSaveCard() {
     if (!editing?.front?.trim() || !editing?.deck?.trim()) return
@@ -77,6 +80,13 @@ export default function FlashcardsTab() {
       setEditing(null)
     } catch (e) { console.error(e) }
     setSaving(false)
+  }
+
+  async function handleClearFlag(id) {
+    try {
+      await setFlashcardFlag(spreadsheetId, id, false)
+      await load()
+    } catch (e) { console.error(e) }
   }
 
   async function handleDeleteCard(id) {
@@ -261,7 +271,7 @@ export default function FlashcardsTab() {
     return (
       <div className="px-4 py-4 pb-24">
         <div className="flex items-center justify-between mb-1">
-          <button onClick={() => setOpenDeck(null)} className="text-gray-400 text-sm active:text-white">← Decks</button>
+          <button onClick={() => { setOpenDeck(null); setShowRedo(false) }} className="text-gray-400 text-sm active:text-white">← Decks</button>
           <div className="flex items-center gap-3">
             <button onClick={handleRenameDeck} className="text-gray-500 text-xs active:text-gray-300">Rename</button>
             <button onClick={handleDeleteDeck} className="text-gray-600 text-xs active:text-red-400">Delete deck</button>
@@ -272,30 +282,58 @@ export default function FlashcardsTab() {
         <p className="text-gray-500 text-xs mb-4">
           {deckCards.length} card{deckCards.length === 1 ? '' : 's'}
           {openReviewed > 0 && <> · {openReviewed} reviewed</>}
+          {redoCards.length > 0 && <> · <span className="text-slate-400">{redoCards.length} to redo</span></>}
         </p>
 
         {deckCards.length > 0 && (
           <button
             onClick={() => setReviewing(true)}
-            className={`w-full ${openAccent.chipBg} ${openAccent.text} border ${openAccent.ring} font-semibold py-3.5 rounded-xl mb-4 active:scale-95 transition-transform`}
+            className={`w-full ${openAccent.chipBg} ${openAccent.text} border ${openAccent.ring} font-semibold py-3.5 rounded-xl mb-3 active:scale-95 transition-transform`}
           >
-            Review {deckCards.length} card{deckCards.length === 1 ? '' : 's'}
+            Shuffle {deckCards.length} card{deckCards.length === 1 ? '' : 's'}
+          </button>
+        )}
+
+        {redoCards.length > 0 && (
+          <button
+            onClick={() => setShowRedo(v => !v)}
+            className={`w-full mb-4 text-xs font-semibold py-2.5 rounded-xl border transition-colors ${
+              showRedo
+                ? 'bg-slate-500/15 text-slate-200 border-slate-400/40'
+                : 'text-slate-400 border-slate-500/30 active:bg-slate-500/10'
+            }`}
+          >
+            {showRedo ? '← All cards' : `Needs redo (${redoCards.length})`}
           </button>
         )}
 
         <div className="space-y-2">
-          {deckCards.map(c => (
-            <button
+          {listCards.map(c => (
+            <div
               key={c.id}
-              onClick={() => setEditing({ id: c.id, deck: c.deck, front: c.front, back: c.back })}
-              className="w-full text-left bg-gray-800 rounded-xl px-4 py-3 active:bg-gray-700 transition-colors flex items-start gap-3"
+              className="relative bg-gray-800 rounded-xl active:bg-gray-700 transition-colors"
             >
-              <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${c.last_reviewed ? openAccent.dot : 'bg-gray-600'}`} />
-              <div className="min-w-0">
-                <div className="text-white text-sm font-medium line-clamp-2">{c.front}</div>
-                <div className="text-gray-500 text-xs mt-1 line-clamp-2">{c.back}</div>
-              </div>
-            </button>
+              <button
+                onClick={() => setEditing({ id: c.id, deck: c.deck, front: c.front, back: c.back })}
+                className="w-full text-left px-4 py-3 flex items-start gap-3"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                  c.flagged === '1' ? 'bg-rose-500' : c.last_reviewed ? openAccent.dot : 'bg-gray-600'
+                }`} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-white text-sm font-medium line-clamp-2">{c.front}</div>
+                  <div className="text-gray-500 text-xs mt-1 line-clamp-2">{c.back}</div>
+                </div>
+              </button>
+              {c.flagged === '1' && (
+                <button
+                  onClick={() => handleClearFlag(c.id)}
+                  className="absolute top-2 right-2 text-[10px] font-semibold text-slate-400 border border-slate-500/40 rounded-md px-1.5 py-0.5 active:text-slate-200"
+                >
+                  Clear flag
+                </button>
+              )}
+            </div>
           ))}
         </div>
 
@@ -344,12 +382,13 @@ export default function FlashcardsTab() {
             const deckAll = cards.filter(c => c.deck === deck)
             const count = deckAll.length
             const reviewed = deckAll.filter(c => c.last_reviewed).length
+            const redo = deckAll.filter(c => c.flagged === '1').length
             const pct = count ? Math.round((reviewed / count) * 100) : 0
             const accent = deckAccent(deck)
             return (
               <button
                 key={deck}
-                onClick={() => setOpenDeck(deck)}
+                onClick={() => { setOpenDeck(deck); setShowRedo(false) }}
                 className="w-full text-left bg-gray-800 rounded-xl overflow-hidden active:bg-gray-700 transition-colors flex items-stretch"
               >
                 <div className={`w-1 shrink-0 ${accent.bar}`} />
@@ -359,6 +398,7 @@ export default function FlashcardsTab() {
                     <div className="text-gray-500 text-xs mt-1">
                       {count} card{count === 1 ? '' : 's'}
                       {reviewed > 0 && <> · {reviewed} reviewed</>}
+                      {redo > 0 && <> · <span className="text-slate-400">{redo} to redo</span></>}
                     </div>
                     {reviewed > 0 && (
                       <div className="h-1 bg-gray-700 rounded-full mt-2 overflow-hidden w-32">

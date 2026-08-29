@@ -1,149 +1,124 @@
-import { useState, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/useAuth'
-import { markFlashcardsReviewed } from '../../services/sheets'
+import { recordFlashcardSwipe } from '../../services/sheets'
 import { parseBack, labelTone, TONES, deckAccent } from './cardFormat'
-
-function shuffle(arr) {
-  const out = [...arr]
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[out[i], out[j]] = [out[j], out[i]]
-  }
-  return out
-}
+import { cardWeight, nextWeight, pickNext, SWIPES } from './shuffle'
+import SwipeCard from './SwipeCard'
 
 export default function ReviewSession({ deck, cards, onExit }) {
   const { spreadsheetId } = useAuth()
-  const initial = useMemo(() => shuffle(cards), [cards])
-  const [queue, setQueue] = useState(initial)
-  const [flipped, setFlipped] = useState(false)
-  const [seen, setSeen] = useState([]) // card ids answered "Got it" at least once
-  const [againCount, setAgainCount] = useState(0)
-
-  const current = queue[0]
-  const done = queue.length === 0
   const accent = deckAccent(deck)
-  const blocks = useMemo(() => parseBack(current?.back), [current?.back])
 
-  function handleAgain() {
-    setAgainCount(c => c + 1)
-    setQueue(q => (q.length > 1 ? [...q.slice(1), q[0]] : q))
-    setFlipped(false)
-  }
+  // Snapshot the deck once — the parent hands a fresh array on every render.
+  const [sessionCards] = useState(cards)
+  const [seed] = useState(() => {
+    const w = Object.fromEntries(sessionCards.map(c => [c.id, cardWeight(c)]))
+    return { weights: w, first: pickNext(sessionCards, c => w[c.id]) }
+  })
+  // Live draw weights. Mutated only inside handleSwipe (an event handler) so the
+  // picker always sees the latest values without re-rendering on every swipe.
+  const weights = useRef(seed.weights)
+  const recent = useRef([]) // last couple of card ids, to avoid immediate repeats
 
-  function handleGotIt() {
-    const card = queue[0]
-    const nextSeen = seen.includes(card.id) ? seen : [...seen, card.id]
-    const nextQueue = queue.slice(1)
-    setSeen(nextSeen)
-    setQueue(nextQueue)
+  const [current, setCurrent] = useState(seed.first)
+  const [flipped, setFlipped] = useState(false)
+  const [count, setCount] = useState(0)
+  const [lastDir, setLastDir] = useState(null)
+
+  const blocks = useMemo(() => parseBack(current.back), [current.back])
+
+  const handleSwipe = useCallback((dir) => {
+    setCurrent(card => {
+      const w = nextWeight(dir, weights.current[card.id] ?? 1)
+      weights.current = { ...weights.current, [card.id]: w }
+      const flagged = dir === 'down' ? '1' : (card.flagged || '')
+
+      recordFlashcardSwipe(spreadsheetId, card.id, {
+        weight: w,
+        flagged: dir === 'down' ? true : null,
+      }).catch(e => console.error(e))
+
+      recent.current = [card.id, ...recent.current].slice(0, 2)
+      const next = pickNext(sessionCards, c => weights.current[c.id], recent.current)
+      return { ...next, flagged: next.id === card.id ? flagged : next.flagged }
+    })
+    setLastDir(dir)
+    setCount(n => n + 1)
     setFlipped(false)
-    if (nextQueue.length === 0) {
-      // Session finished — persist review stamps without blocking the summary screen.
-      markFlashcardsReviewed(spreadsheetId, nextSeen).catch(e => console.error(e))
+  }, [sessionCards, spreadsheetId])
+
+  // Desktop / accessibility: arrow keys mirror the swipes, space/enter flips.
+  useEffect(() => {
+    function onKey(e) {
+      const map = { ArrowRight: 'right', ArrowLeft: 'left', ArrowUp: 'up', ArrowDown: 'down' }
+      if (map[e.key]) { e.preventDefault(); handleSwipe(map[e.key]) }
+      else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setFlipped(f => !f) }
     }
-  }
-
-  if (done) {
-    return (
-      <div className="flex flex-col items-center justify-center px-6 py-16 gap-4 text-center">
-        <div className="text-5xl">🎉</div>
-        <h2 className="text-white text-xl font-semibold">Deck complete</h2>
-        <p className="text-gray-400 text-sm">
-          {initial.length} card{initial.length === 1 ? '' : 's'} in {deck}
-          {againCount > 0 && <> · {againCount} repeat{againCount === 1 ? '' : 's'}</>}
-        </p>
-        <div className="flex gap-3 mt-2">
-          <button
-            onClick={() => { setQueue(shuffle(initial)); setSeen([]); setAgainCount(0); setFlipped(false) }}
-            className="bg-amber-600 text-white text-sm font-medium px-5 py-2.5 rounded-xl active:scale-95 transition-transform"
-          >
-            Review again
-          </button>
-          <button
-            onClick={onExit}
-            className="bg-gray-800 text-gray-300 text-sm font-medium px-5 py-2.5 rounded-xl active:scale-95 transition-transform"
-          >
-            Done
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const remaining = queue.length
-  const progress = ((initial.length - remaining) / initial.length) * 100
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleSwipe])
 
   return (
     <div className="flex flex-col px-4 py-4 h-[calc(100svh-110px)]">
       <div className="flex items-center justify-between mb-3">
         <button onClick={onExit} className="text-gray-400 text-sm active:text-white">← Exit</button>
-        <span className="text-gray-500 text-xs">{remaining} left</span>
+        <span className="text-gray-500 text-xs">
+          {count} reviewed
+          {lastDir && <span className={`ml-2 ${SWIPES[lastDir].tone}`}>{SWIPES[lastDir].glyph} {SWIPES[lastDir].label}</span>}
+        </span>
       </div>
 
-      <div className="h-1 bg-gray-800 rounded-full mb-4 overflow-hidden">
-        <div className={`h-full ${accent.bar} transition-all duration-300`} style={{ width: `${progress}%` }} />
-      </div>
+      <SwipeCard key={current.id} accent={accent} flipped={flipped} onSwipe={handleSwipe} onTap={() => setFlipped(f => !f)}>
+        {flipped ? (
+          <div className="w-full space-y-3.5">
+            {blocks.map((block, i) => {
+              const tone = block.label ? TONES[labelTone(block.label)] : null
+              return (
+                <div key={i} className={tone ? `border-l-2 ${tone.bar} pl-3` : ''}>
+                  {block.label && (
+                    <div className={`text-[11px] font-bold uppercase tracking-wider mb-1 ${tone.label}`}>
+                      {block.label}
+                    </div>
+                  )}
+                  <p className={`whitespace-pre-wrap leading-relaxed ${
+                    i === 0 && !block.label
+                      ? 'text-white text-[17px] font-medium'
+                      : 'text-gray-300 text-[15px]'
+                  }`}>
+                    {block.body}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <>
+            <span className={`text-[10px] font-bold uppercase tracking-widest ${accent.text}`}>
+              {deck}
+              {current.flagged === '1' && <span className="text-slate-400"> · flagged for redo</span>}
+            </span>
+            <p className="text-white text-2xl font-semibold leading-snug whitespace-pre-wrap">
+              {current.front}
+            </p>
+            <span className="text-gray-600 text-xs mt-1">Tap to reveal</span>
+          </>
+        )}
+      </SwipeCard>
 
-      {/* The card scrolls inside its own box so the answer buttons stay reachable
-          however long the card is. min-h-full on the inner button keeps short cards
-          vertically centred without clipping long ones. */}
-      <div className={`flex-1 min-h-0 w-full bg-gray-800 rounded-2xl border ${accent.ring} overflow-y-auto overscroll-contain`}>
-        <button
-          onClick={() => setFlipped(f => !f)}
-          className={`w-full min-h-full px-5 py-6 flex flex-col gap-4 active:bg-gray-700 transition-colors ${
-            flipped ? 'justify-start text-left' : 'justify-center items-center'
-          }`}
-        >
-          {flipped ? (
-            <div className="w-full space-y-3.5">
-              {blocks.map((block, i) => {
-                const tone = block.label ? TONES[labelTone(block.label)] : null
-                return (
-                  <div key={i} className={tone ? `border-l-2 ${tone.bar} pl-3` : ''}>
-                    {block.label && (
-                      <div className={`text-[11px] font-bold uppercase tracking-wider mb-1 ${tone.label}`}>
-                        {block.label}
-                      </div>
-                    )}
-                    <p className={`whitespace-pre-wrap leading-relaxed ${
-                      i === 0 && !block.label
-                        ? 'text-white text-[17px] font-medium'
-                        : 'text-gray-300 text-[15px]'
-                    }`}>
-                      {block.body}
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <>
-              <span className={`text-[10px] font-bold uppercase tracking-widest ${accent.text}`}>
-                {deck}
-              </span>
-              <p className="text-white text-2xl font-semibold leading-snug text-center whitespace-pre-wrap">
-                {current.front}
-              </p>
-              <span className="text-gray-600 text-xs mt-1">Tap to reveal</span>
-            </>
-          )}
-        </button>
-      </div>
-
-      <div className="flex gap-3 mt-4 shrink-0">
-        <button
-          onClick={handleAgain}
-          className="flex-1 bg-gray-800 text-gray-300 font-medium py-3.5 rounded-xl active:scale-95 transition-transform"
-        >
-          Again
-        </button>
-        <button
-          onClick={handleGotIt}
-          className="flex-1 bg-amber-600 text-white font-medium py-3.5 rounded-xl active:scale-95 transition-transform"
-        >
-          Got it
-        </button>
+      {/* Legend doubles as buttons — needed for up/down on long, scrollable answers,
+          and for anyone not using touch. */}
+      <div className="grid grid-cols-4 gap-2 mt-4 shrink-0">
+        {['left', 'up', 'down', 'right'].map(dir => (
+          <button
+            key={dir}
+            onClick={() => handleSwipe(dir)}
+            className={`flex flex-col items-center gap-0.5 py-2 rounded-xl border bg-gray-800/60 active:scale-95 transition-transform ${SWIPES[dir].ring}`}
+          >
+            <span className={`text-lg leading-none ${SWIPES[dir].tone}`}>{SWIPES[dir].glyph}</span>
+            <span className={`text-[11px] font-semibold ${SWIPES[dir].tone}`}>{SWIPES[dir].label}</span>
+            <span className="text-[9px] text-gray-500">{SWIPES[dir].hint}</span>
+          </button>
+        ))}
       </div>
     </div>
   )

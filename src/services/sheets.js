@@ -99,6 +99,7 @@ async function ensureSheets(spreadsheetId) {
   await ensureCalendarEventHeaders(spreadsheetId)
   await ensureRecurringTemplateHeaders(spreadsheetId)
   await ensureHabitCompletionHeaders(spreadsheetId)
+  await ensureFlashcardHeaders(spreadsheetId)
 }
 
 async function writeTrashHeaders(spreadsheetId) {
@@ -183,10 +184,25 @@ async function writeJournalEntriesHeaders(spreadsheetId) {
   })
 }
 
+const FLASHCARD_HEADERS = ['id', 'deck', 'front', 'back', 'created_at', 'last_reviewed', 'review_count', 'weight', 'flagged']
+
 async function writeFlashcardHeaders(spreadsheetId) {
-  await req(`${BASE}/${spreadsheetId}/values/flashcards!A1:G1?valueInputOption=RAW`, {
+  await req(`${BASE}/${spreadsheetId}/values/flashcards!A1:I1?valueInputOption=RAW`, {
     method: 'PUT',
-    body: JSON.stringify({ values: [['id', 'deck', 'front', 'back', 'created_at', 'last_reviewed', 'review_count']] }),
+    body: JSON.stringify({ values: [FLASHCARD_HEADERS] }),
+  })
+}
+
+// Adds the weight/flagged columns to flashcards sheets created before they existed.
+// Only the header row is written — existing cards keep empty cells, which the app
+// reads as weight 1 / not flagged.
+async function ensureFlashcardHeaders(spreadsheetId) {
+  const data = await req(`${BASE}/${spreadsheetId}/values/flashcards!1:1`)
+  const headers = data.values?.[0] || []
+  if (headers.includes('weight') && headers.includes('flagged')) return
+  await req(`${BASE}/${spreadsheetId}/values/flashcards!A1:I1?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [FLASHCARD_HEADERS] }),
   })
 }
 
@@ -223,7 +239,7 @@ async function writeHeaders(spreadsheetId) {
     { range: 'habit_completions!A1', values: [['template_id', 'date', 'status', 'updated_at']] },
     { range: 'journal_metrics!A1', values: [['id', 'name', 'type', 'unit', 'sort_order', 'active']] },
     { range: 'journal_entries!A1', values: [['id', 'date', 'metric_id', 'value', 'updated_at']] },
-    { range: 'flashcards!A1', values: [['id', 'deck', 'front', 'back', 'created_at', 'last_reviewed', 'review_count']] },
+    { range: 'flashcards!A1', values: [['id', 'deck', 'front', 'back', 'created_at', 'last_reviewed', 'review_count', 'weight', 'flagged']] },
   ]
   await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
     method: 'POST',
@@ -436,14 +452,14 @@ export async function getFlashcards(spreadsheetId) {
 }
 
 export async function createFlashcard(spreadsheetId, { deck, front, back }) {
-  const row = [genId(), deck, front, back, new Date().toISOString(), '', '0']
+  const row = [genId(), deck, front, back, new Date().toISOString(), '', '0', '1', '']
   await appendRow(spreadsheetId, 'flashcards', row)
 }
 
 // Appends many cards in one request — used for bulk-pasting a deck.
 export async function createFlashcards(spreadsheetId, cards) {
   const stamp = new Date().toISOString()
-  const rows = cards.map(c => [genId(), c.deck, c.front, c.back, stamp, '', '0'])
+  const rows = cards.map(c => [genId(), c.deck, c.front, c.back, stamp, '', '0', '1', ''])
   await req(`${BASE}/${spreadsheetId}/values/flashcards!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
     method: 'POST',
     body: JSON.stringify({ values: rows }),
@@ -453,28 +469,39 @@ export async function createFlashcards(spreadsheetId, cards) {
 export async function updateFlashcard(spreadsheetId, rowIndex, row) {
   await updateRow(spreadsheetId, 'flashcards', rowIndex, [
     row.id, row.deck, row.front, row.back, row.created_at || '', row.last_reviewed || '', String(row.review_count ?? 0),
+    row.weight ?? '1', row.flagged || '',
   ])
 }
 
-// Stamps last_reviewed / review_count for every card seen in a session, in one batch
-// write at the end of the session rather than a request per card.
-export async function markFlashcardsReviewed(spreadsheetId, cardIds) {
-  if (cardIds.length === 0) return
+// Persists one swipe: the new draw weight, the flag state, and a review stamp.
+// Written per swipe (one row) rather than batched at the end, so nothing is lost
+// when the session is closed mid-review.
+export async function recordFlashcardSwipe(spreadsheetId, cardId, { weight, flagged }) {
   const rows = await getFlashcards(spreadsheetId)
-  const stamp = new Date().toISOString()
-  const data = []
-  rows.forEach((row, i) => {
-    if (!cardIds.includes(row.id)) return
-    const sheetRow = i + 2
-    data.push({
-      range: `flashcards!A${sheetRow}:G${sheetRow}`,
-      values: [[row.id, row.deck, row.front, row.back, row.created_at || '', stamp, String((parseInt(row.review_count, 10) || 0) + 1)]],
-    })
+  const i = rows.findIndex(r => r.id === cardId)
+  if (i === -1) return
+  const row = rows[i]
+  const sheetRow = i + 2
+  await req(`${BASE}/${spreadsheetId}/values/flashcards!A${sheetRow}:I${sheetRow}?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [[
+      row.id, row.deck, row.front, row.back, row.created_at || '',
+      new Date().toISOString(),
+      String((parseInt(row.review_count, 10) || 0) + 1),
+      weight == null ? (row.weight || '1') : String(Math.round(weight * 1000) / 1000),
+      flagged == null ? (row.flagged || '') : (flagged ? '1' : ''),
+    ]] }),
   })
-  if (data.length === 0) return
-  await req(`${BASE}/${spreadsheetId}/values:batchUpdate`, {
-    method: 'POST',
-    body: JSON.stringify({ valueInputOption: 'RAW', data }),
+}
+
+// Toggles just the flagged column for one card.
+export async function setFlashcardFlag(spreadsheetId, cardId, flagged) {
+  const rows = await getFlashcards(spreadsheetId)
+  const i = rows.findIndex(r => r.id === cardId)
+  if (i === -1) return
+  await req(`${BASE}/${spreadsheetId}/values/flashcards!I${i + 2}?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [[flagged ? '1' : '']] }),
   })
 }
 
