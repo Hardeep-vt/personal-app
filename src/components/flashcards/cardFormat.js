@@ -56,12 +56,15 @@ function splitBullets(text) {
     else if (bullets.length === 0) lead.push(t)
     else bullets[bullets.length - 1] += ' ' + t
   }
-  return { body: text, lead: lead.join(' ') || null, bullets }
+  // A lead-in that ends in a colon is introducing the bullets — drop the colon.
+  const leadText = lead.join(' ').replace(/\s*:$/, '') || null
+  return { body: text, lead: leadText, bullets }
 }
 
-// Splits a back into blocks. A label is a short capitalised lead-in ending in a
-// colon; anything else is plain body text. Each block also carries { lead, bullets }
-// when its body is written as a "- " bullet list.
+// Splits a back into blocks. A label is a short (≤ 4-word) capitalised lead-in
+// ending in a colon — "Mechanism:", "Why it matters:". A longer "sentence:" before
+// bullets is an intro line, not a heading, so it stays in the body as a lead.
+// Each block also carries { lead, bullets } when its body is a "- " bullet list.
 export function parseBack(back) {
   return (back || '')
     .split('\n\n')
@@ -69,8 +72,9 @@ export function parseBack(back) {
     .filter(Boolean)
     .map(para => {
       const m = para.match(/^([A-Z][^:\n]{1,44}):\s+([\s\S]+)$/)
-      const label = m ? m[1] : null
-      const raw = m ? capitaliseBody(m[2]) : para
+      const isHeading = m && m[1].trim().split(/\s+/).length <= 4
+      const label = isHeading ? m[1] : null
+      const raw = isHeading ? capitaliseBody(m[2]) : para
       return { label, ...splitBullets(raw) }
     })
 }
