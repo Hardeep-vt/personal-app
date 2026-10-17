@@ -21,3 +21,14 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+/* Life section: bump text ~15% for readability. Scoped to .life-scale so Flashcards,
+   the header and the tab bar keep their sizes. Change the one variable to tune it. */
+.life-scale { --life-font-scale: 1.15; }
+.life-scale .text-xs { font-size: calc(0.75rem * var(--life-font-scale)); }
+.life-scale .text-sm { font-size: calc(0.875rem * var(--life-font-scale)); }
+.life-scale .text-base { font-size: calc(1rem * var(--life-font-scale)); }
+.life-scale .text-lg { font-size: calc(1.125rem * var(--life-font-scale)); }
+.life-scale .text-xl { font-size: calc(1.25rem * var(--life-font-scale)); }
+.life-scale .text-2xl { font-size: calc(1.5rem * var(--life-font-scale)); }
+.life-scale .text-\[11px\] { font-size: calc(11px * var(--life-font-scale)); }

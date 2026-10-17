@@ -46,10 +46,11 @@ export default function TodosTab({ onJumpToCalendar }) {
     return calendarEvents.filter(e => e.todo_id === todoId)
   }
 
-  function openSchedule(todo) {
-    setScheduleForm({ date: todayStr(), start_time: '09:00', end_time: '10:00' })
-    setScheduling(todo)
-  }
+  // DISABLED while the Calendar section is off (only used by the Schedule button below).
+  // function openSchedule(todo) {
+  //   setScheduleForm({ date: todayStr(), start_time: '09:00', end_time: '10:00' })
+  //   setScheduling(todo)
+  // }
 
   async function handleAddSession(e) {
     e.preventDefault()
@@ -209,12 +210,15 @@ export default function TodosTab({ onJumpToCalendar }) {
                   </div>
                   <button onClick={() => handleDelete(r.id)} className="text-gray-600 active:text-red-400 text-base px-1">🗑</button>
                 </div>
+                {/* DISABLED while the Calendar section is off (scheduled sessions would be invisible).
+                    Uncomment to re-enable together with Calendar in App.jsx.
                 <button
                   onClick={() => openSchedule(r)}
                   className="text-[11px] font-medium text-indigo-400 active:text-indigo-300"
                 >
                   {sessionsFor(r.id).length > 0 ? `🗓 ${sessionsFor(r.id).length} session${sessionsFor(r.id).length > 1 ? 's' : ''}` : '🗓 Schedule'}
                 </button>
+                */}
               </div>
             </div>
           ))}

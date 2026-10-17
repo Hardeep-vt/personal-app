@@ -13,6 +13,7 @@ const SUB_TABS = [
   { id: 'trash', label: 'Trash' },
 ]
 
+// onJumpToCalendar is only passed while the Calendar section is enabled (see App.jsx).
 export default function LifeTab({ onJumpToCalendar }) {
   const [activeSubTab, setActiveSubTab] = useState('journal')
 
@@ -25,7 +26,7 @@ export default function LifeTab({ onJumpToCalendar }) {
   }
 
   return (
-    <div>
+    <div className="life-scale">
       <div className="flex gap-2 px-4 pt-4 overflow-x-auto">
         {SUB_TABS.map(tab => (
           <button

@@ -1,20 +1,27 @@
-import { useState, useCallback, useEffect } from 'react'
+// Only Flashcards and Life are active for now. Food, Exercise and Calendar are
+// switched off but kept intact. To bring a section back, search this file for
+// "DISABLED" and uncomment, for that section: its import, its SECTIONS line, its
+// tabContent line (Exercise: also the Whoop callback; Calendar: also the jump state
+// and the onJumpToCalendar prop). Calendar also needs the Schedule button in
+// src/components/todos/TodosTab.jsx uncommented. With 4+ sections, consider swapping
+// the bottom tab bar back for the DISABLED drawer menu.
+import { useState, useCallback } from 'react'
 import { AuthProvider } from './context/AuthContext'
-import { handleWhoopCallback } from './services/whoop'
+// DISABLED (Exercise): import { handleWhoopCallback } from './services/whoop'
 import { useAuth } from './context/useAuth'
-import FoodTab from './components/food/FoodTab'
-import ExerciseTab from './components/exercise/ExerciseTab'
+// DISABLED (Food): import FoodTab from './components/food/FoodTab'
+// DISABLED (Exercise): import ExerciseTab from './components/exercise/ExerciseTab'
 import LifeTab from './components/life/LifeTab'
-import CalendarTab from './components/calendar/CalendarTab'
+// DISABLED (Calendar): import CalendarTab from './components/calendar/CalendarTab'
 import FlashcardsTab from './components/flashcards/FlashcardsTab'
 import usePullToRefresh from './hooks/usePullToRefresh'
 
 const SECTIONS = [
   { id: 'flashcards', label: 'Flashcards', icon: '🗂️' },
   { id: 'life', label: 'Life', icon: '📋' },
-  { id: 'food', label: 'Food', icon: '🥗' },
-  { id: 'exercise', label: 'Exercise', icon: '💪' },
-  { id: 'calendar', label: 'Calendar', icon: '📅' },
+  // DISABLED (Food): { id: 'food', label: 'Food', icon: '🥗' },
+  // DISABLED (Exercise): { id: 'exercise', label: 'Exercise', icon: '💪' },
+  // DISABLED (Calendar): { id: 'calendar', label: 'Calendar', icon: '📅' },
 ]
 
 function AppInner() {
@@ -22,24 +29,24 @@ function AppInner() {
   // Always land on Flashcards: the app opens as a phone shortcut, and starting on
   // the revision decks is the whole point of opening it.
   const [activeTab, setActiveTab] = useState('flashcards')
-  const [menuOpen, setMenuOpen] = useState(false)
+  // DISABLED (drawer menu, replaced by the bottom tab bar): const [menuOpen, setMenuOpen] = useState(false)
 
-  // Handle redirect back from Whoop OAuth
-  useEffect(() => {
-    if (window.location.search.includes('code=')) {
-      handleWhoopCallback().then(ok => {
-        if (ok) setActiveTab('exercise')
-      })
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // DISABLED (Exercise): handle redirect back from Whoop OAuth
+  // useEffect(() => {
+  //   if (window.location.search.includes('code=')) {
+  //     handleWhoopCallback().then(ok => {
+  //       if (ok) setActiveTab('exercise')
+  //     })
+  //   }
+  // }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
-  const [calendarJumpDate, setCalendarJumpDate] = useState(null)
-
-  const jumpToCalendar = useCallback((date) => {
-    setCalendarJumpDate(date)
-    setActiveTab('calendar')
-  }, [])
+  // DISABLED (Calendar):
+  // const [calendarJumpDate, setCalendarJumpDate] = useState(null)
+  // const jumpToCalendar = useCallback((date) => {
+  //   setCalendarJumpDate(date)
+  //   setActiveTab('calendar')
+  // }, [])
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true)
@@ -67,7 +74,7 @@ function AppInner() {
           <p className="text-gray-400 text-sm">
             {returning
               ? 'Welcome back — one tap to pick up where you left off.'
-              : 'Your personal tracker — flashcards, life, food, exercise & calendar'}
+              : 'Your personal tracker — flashcards & life'}
           </p>
         </div>
         {error && <p className="text-red-400 text-sm text-center max-w-xs">{error}</p>}
@@ -86,10 +93,11 @@ function AppInner() {
   }
 
   const tabContent = {
-    food: <FoodTab key={refreshKey} />,
-    exercise: <ExerciseTab key={refreshKey} />,
-    life: <LifeTab key={refreshKey} onJumpToCalendar={jumpToCalendar} />,
-    calendar: <CalendarTab key={refreshKey} jumpDate={calendarJumpDate} onJumpHandled={() => setCalendarJumpDate(null)} />,
+    // DISABLED (Food): food: <FoodTab key={refreshKey} />,
+    // DISABLED (Exercise): exercise: <ExerciseTab key={refreshKey} />,
+    // DISABLED (Calendar): add back onJumpToCalendar={jumpToCalendar} to LifeTab below
+    life: <LifeTab key={refreshKey} />,
+    // DISABLED (Calendar): calendar: <CalendarTab key={refreshKey} jumpDate={calendarJumpDate} onJumpHandled={() => setCalendarJumpDate(null)} />,
     flashcards: <FlashcardsTab key={refreshKey} />,
   }
 
@@ -99,6 +107,7 @@ function AppInner() {
     <div className="flex flex-col min-h-svh">
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
         <div className="flex items-center gap-2.5">
+          {/* DISABLED (drawer menu, replaced by the bottom tab bar):
           <button
             onClick={() => setMenuOpen(true)}
             aria-label="Open menu"
@@ -106,6 +115,7 @@ function AppInner() {
           >
             ☰
           </button>
+          */}
           <span className="text-white font-semibold text-lg">
             {activeSection?.icon} {activeSection?.label}
           </span>
@@ -144,10 +154,26 @@ function AppInner() {
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto overscroll-contain pb-8">
+      <main className="flex-1 overflow-y-auto overscroll-contain pb-24">
         {tabContent[activeTab]}
       </main>
 
+      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex safe-area-inset-bottom z-40">
+        {SECTIONS.map(section => (
+          <button
+            key={section.id}
+            onClick={() => setActiveTab(section.id)}
+            className={`flex-1 flex flex-col items-center gap-1 py-3 text-sm transition-colors ${
+              activeTab === section.id ? 'text-indigo-400' : 'text-gray-500'
+            }`}
+          >
+            <span className="text-3xl leading-none">{section.icon}</span>
+            <span>{section.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* DISABLED (drawer menu, replaced by the bottom tab bar):
       {menuOpen && (
         <div className="fixed inset-0 z-50 flex">
           <div
@@ -182,6 +208,7 @@ function AppInner() {
           </nav>
         </div>
       )}
+      */}
     </div>
   )
 }
